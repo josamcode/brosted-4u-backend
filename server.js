@@ -94,12 +94,24 @@ const PORT = process.env.PORT || 5000;
 
 const server = app.listen(PORT, () => {
   console.log(`🚀 Brosted-4U Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+
+  // QR Auto-Generator is now frontend-driven (generates on-demand when admin page is open)
+  // No longer running automatically on the backend
+  console.log('💡 QR codes will be generated on-demand from the frontend');
 });
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
   console.log(`Error: ${err.message}`);
   server.close(() => process.exit(1));
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully...');
+  server.close(() => {
+    console.log('Process terminated');
+  });
 });
 
 module.exports = app;

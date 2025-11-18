@@ -7,7 +7,7 @@ const User = require('../models/User');
 exports.getLeaveRequests = async (req, res) => {
   try {
     const { status, type, userId, dateFrom, dateTo } = req.query;
-    
+
     let query = {};
 
     // Role-based filtering
@@ -15,11 +15,11 @@ exports.getLeaveRequests = async (req, res) => {
       query.userId = req.user.id;
     } else {
       if (userId) query.userId = userId;
-      
+
       // Supervisors see only their departments
       if (req.user.role === 'supervisor') {
-        const users = await User.find({ 
-          department: { $in: req.user.departments } 
+        const users = await User.find({
+          department: { $in: req.user.departments }
         }).select('_id');
         query.userId = { $in: users.map(u => u._id) };
       }
@@ -27,7 +27,7 @@ exports.getLeaveRequests = async (req, res) => {
 
     if (status) query.status = status;
     if (type) query.type = type;
-    
+
     // Date range
     if (dateFrom || dateTo) {
       query.startDate = {};
@@ -104,7 +104,7 @@ exports.getLeaveRequest = async (req, res) => {
 // @access  Private
 exports.createLeaveRequest = async (req, res) => {
   try {
-    const { type, startDate, endDate, reason } = req.body;
+    const { type, startDate, endDate, reason, days } = req.body;
 
     if (!type || !startDate || !endDate || !reason) {
       return res.status(400).json({
@@ -116,12 +116,19 @@ exports.createLeaveRequest = async (req, res) => {
     // Validate dates
     const start = new Date(startDate);
     const end = new Date(endDate);
-    
+
     if (end < start) {
       return res.status(400).json({
         success: false,
         message: 'End date cannot be before start date'
       });
+    }
+
+    // Calculate days if not provided (fallback)
+    let calculatedDays = days;
+    if (!calculatedDays || calculatedDays <= 0) {
+      const diffTime = Math.abs(end - start);
+      calculatedDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
     }
 
     // Check for overlapping leave requests
@@ -146,6 +153,7 @@ exports.createLeaveRequest = async (req, res) => {
       startDate: start,
       endDate: end,
       reason,
+      days: calculatedDays,
       status: 'pending'
     });
 
@@ -168,7 +176,7 @@ exports.createLeaveRequest = async (req, res) => {
 // @access  Private
 exports.updateLeaveRequest = async (req, res) => {
   try {
-    const { type, startDate, endDate, reason } = req.body;
+    const { type, startDate, endDate, reason, days } = req.body;
 
     let leave = await LeaveRequest.findById(req.params.id);
 
@@ -200,6 +208,16 @@ exports.updateLeaveRequest = async (req, res) => {
     if (startDate) leave.startDate = new Date(startDate);
     if (endDate) leave.endDate = new Date(endDate);
     if (reason) leave.reason = reason;
+
+    // Recalculate days if dates changed
+    if (startDate || endDate) {
+      const start = leave.startDate;
+      const end = leave.endDate;
+      const diffTime = Math.abs(end - start);
+      leave.days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    } else if (days) {
+      leave.days = days;
+    }
 
     await leave.save();
     await leave.populate('userId', 'name email department');
@@ -355,19 +373,12 @@ exports.cancelLeaveRequest = async (req, res) => {
       });
     }
 
-    // Can cancel pending or approved requests
-    if (!['pending', 'approved'].includes(leave.status)) {
+    // Can only cancel pending requests
+    if (leave.status !== 'pending') {
       return res.status(400).json({
         success: false,
-        message: 'Cannot cancel this leave request'
+        message: 'Can only cancel pending leave requests'
       });
-    }
-
-    // Restore leave balance if it was approved
-    if (leave.status === 'approved') {
-      const user = await User.findById(leave.userId);
-      user.leaveBalance += leave.days;
-      await user.save();
     }
 
     leave.status = 'cancelled';
@@ -392,20 +403,20 @@ exports.cancelLeaveRequest = async (req, res) => {
 exports.getLeaveStats = async (req, res) => {
   try {
     const { dateFrom, dateTo, department } = req.query;
-    
+
     let matchQuery = {};
-    
+
     // Date range
     if (dateFrom || dateTo) {
       matchQuery.startDate = {};
       if (dateFrom) matchQuery.startDate.$gte = new Date(dateFrom);
       if (dateTo) matchQuery.startDate.$lte = new Date(dateTo);
     }
-    
+
     // Department filter for supervisors
     if (req.user.role === 'supervisor') {
-      const users = await User.find({ 
-        department: { $in: req.user.departments } 
+      const users = await User.find({
+        department: { $in: req.user.departments }
       }).select('_id');
       matchQuery.userId = { $in: users.map(u => u._id) };
     } else if (department) {
@@ -459,7 +470,7 @@ exports.getLeaveStats = async (req, res) => {
 exports.getMyLeaveBalance = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    
+
     // Get approved leaves
     const approvedLeaves = await LeaveRequest.find({
       userId: req.user.id,

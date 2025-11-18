@@ -21,6 +21,10 @@ const attendanceLogSchema = new mongoose.Schema({
     enum: ['qr', 'manual', 'biometric'],
     default: 'qr'
   },
+  tokenId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AttendanceToken'
+  },
   location: {
     type: String
   },
@@ -30,7 +34,8 @@ const attendanceLogSchema = new mongoose.Schema({
   metadata: {
     ip: String,
     device: String,
-    token: String
+    userAgent: String,
+    qrSequence: Number
   }
 }, {
   timestamps: true
