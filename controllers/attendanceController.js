@@ -418,6 +418,82 @@ exports.getAllAttendance = async (req, res) => {
   }
 };
 
+// Get all attendance grouped by date (for admin dashboard)
+exports.getAllAttendanceGrouped = async (req, res) => {
+  try {
+    const { startDate, endDate, limit = 30 } = req.query;
+
+    const query = {};
+
+    // Default to last 30 days if no date range provided
+    if (startDate || endDate) {
+      query.timestamp = {};
+      if (startDate) query.timestamp.$gte = new Date(startDate);
+      if (endDate) query.timestamp.$lte = new Date(endDate);
+    } else {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      query.timestamp = { $gte: thirtyDaysAgo };
+    }
+
+    // Check department access for supervisors
+    if (req.user.role === 'supervisor') {
+      const User = require('../models/User');
+      const departmentUsers = await User.find({
+        department: { $in: req.user.departments || [] }
+      }).select('_id');
+
+      query.userId = {
+        $in: departmentUsers.map(u => u._id)
+      };
+    }
+
+    const logs = await AttendanceLog.find(query)
+      .sort({ timestamp: -1 })
+      .populate('tokenId', 'sequenceNumber')
+      .populate('userId', 'name email department');
+
+    // Group by date
+    const groupedByDate = {};
+    logs.forEach(log => {
+      const date = new Date(log.timestamp).toLocaleDateString('en-CA'); // YYYY-MM-DD format
+
+      if (!groupedByDate[date]) {
+        groupedByDate[date] = { date, checkin: null, checkout: null };
+      }
+
+      if (log.type === 'checkin') {
+        // Keep earliest check-in
+        if (!groupedByDate[date].checkin || new Date(log.timestamp) < new Date(groupedByDate[date].checkin.timestamp)) {
+          groupedByDate[date].checkin = log;
+        }
+      } else if (log.type === 'checkout') {
+        // Keep latest check-out
+        if (!groupedByDate[date].checkout || new Date(log.timestamp) > new Date(groupedByDate[date].checkout.timestamp)) {
+          groupedByDate[date].checkout = log;
+        }
+      }
+    });
+
+    // Convert to array and sort by date (newest first)
+    const formattedLogs = Object.values(groupedByDate)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, parseInt(limit));
+
+    res.json({
+      success: true,
+      count: formattedLogs.length,
+      data: formattedLogs
+    });
+  } catch (error) {
+    console.error('Error fetching grouped attendance:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 // Cleanup expired QR codes (can be called manually or by cron)
 exports.cleanupExpiredQRs = async (req, res) => {
   try {

@@ -8,6 +8,7 @@ const {
   getMyAttendance,
   getAttendanceStats,
   getAllAttendance,
+  getAllAttendanceGrouped,
   cleanupExpiredQRs
 } = require('../controllers/attendanceController');
 const { protect, authorize } = require('../middleware/auth');
@@ -32,5 +33,6 @@ router.get('/my-attendance', getMyAttendance);
 // Admin and Supervisor - stats and all logs
 router.get('/stats', authorize('admin', 'supervisor'), getAttendanceStats);
 router.get('/logs', authorize('admin', 'supervisor'), getAllAttendance);
+router.get('/logs/grouped', authorize('admin', 'supervisor'), getAllAttendanceGrouped);
 
 module.exports = router;
