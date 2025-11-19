@@ -6,7 +6,7 @@ const FormTemplate = require('../models/FormTemplate');
 exports.getFormTemplates = async (req, res) => {
   try {
     const { isActive, department } = req.query;
-    
+
     let query = {};
 
     // Filter by active status
@@ -79,14 +79,16 @@ exports.getFormTemplate = async (req, res) => {
 // @access  Private (Admin only)
 exports.createFormTemplate = async (req, res) => {
   try {
-    const { 
-      title, 
-      description, 
-      sections, 
-      visibleToRoles, 
-      editableByRoles, 
+    const {
+      title,
+      description,
+      sections,
+      visibleToRoles,
+      editableByRoles,
       departments,
-      requiresApproval 
+      requiresApproval,
+      layout,
+      pdfStyle
     } = req.body;
 
     const template = await FormTemplate.create({
@@ -97,6 +99,8 @@ exports.createFormTemplate = async (req, res) => {
       editableByRoles: editableByRoles || ['admin', 'supervisor', 'employee'],
       departments: departments || ['all'],
       requiresApproval: requiresApproval !== undefined ? requiresApproval : true,
+      layout: layout || {},
+      pdfStyle: pdfStyle || {},
       createdBy: req.user.id
     });
 
@@ -117,15 +121,17 @@ exports.createFormTemplate = async (req, res) => {
 // @access  Private (Admin only)
 exports.updateFormTemplate = async (req, res) => {
   try {
-    const { 
-      title, 
-      description, 
-      sections, 
-      visibleToRoles, 
-      editableByRoles, 
+    const {
+      title,
+      description,
+      sections,
+      visibleToRoles,
+      editableByRoles,
       departments,
       requiresApproval,
-      isActive 
+      isActive,
+      layout,
+      pdfStyle
     } = req.body;
 
     let template = await FormTemplate.findById(req.params.id);
@@ -139,13 +145,15 @@ exports.updateFormTemplate = async (req, res) => {
 
     // Update fields
     if (title) template.title = title;
-    if (description) template.description = description;
+    if (description !== undefined) template.description = description;
     if (sections) template.sections = sections;
     if (visibleToRoles) template.visibleToRoles = visibleToRoles;
     if (editableByRoles) template.editableByRoles = editableByRoles;
     if (departments) template.departments = departments;
     if (requiresApproval !== undefined) template.requiresApproval = requiresApproval;
     if (isActive !== undefined) template.isActive = isActive;
+    if (layout) template.layout = { ...template.layout, ...layout };
+    if (pdfStyle) template.pdfStyle = { ...template.pdfStyle, ...pdfStyle };
 
     await template.save();
 

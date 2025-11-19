@@ -34,7 +34,7 @@ const seedDatabase = async () => {
       phone: '+1234567890',
       role: 'admin',
       department: 'management',
-      languagePreference: 'en',
+      languagePreference: 'ar',
       isActive: true,
       leaveBalance: 30
     });
@@ -47,7 +47,7 @@ const seedDatabase = async () => {
       role: 'supervisor',
       department: 'kitchen',
       departments: ['kitchen', 'cleaning'],
-      languagePreference: 'en',
+      languagePreference: 'ar',
       isActive: true,
       leaveBalance: 25
     });
@@ -96,7 +96,7 @@ const seedDatabase = async () => {
       phone: '+1234567895',
       role: 'employee',
       department: 'cleaning',
-      languagePreference: 'en',
+      languagePreference: 'ar',
       isActive: true,
       leaveBalance: 21
     });
