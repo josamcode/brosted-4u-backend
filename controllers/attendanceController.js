@@ -421,9 +421,14 @@ exports.getAllAttendance = async (req, res) => {
 // Get all attendance grouped by date (for admin dashboard)
 exports.getAllAttendanceGrouped = async (req, res) => {
   try {
-    const { startDate, endDate, limit = 30 } = req.query;
+    const { startDate, endDate, userId, limit = 30 } = req.query;
 
     const query = {};
+
+    // Filter by userId if provided
+    if (userId) {
+      query.userId = userId;
+    }
 
     // Default to last 30 days if no date range provided
     if (startDate || endDate) {
@@ -443,9 +448,20 @@ exports.getAllAttendanceGrouped = async (req, res) => {
         department: { $in: req.user.departments || [] }
       }).select('_id');
 
-      query.userId = {
-        $in: departmentUsers.map(u => u._id)
-      };
+      // If userId is provided, check if user is in supervisor's departments
+      if (userId) {
+        const userInDepartment = departmentUsers.some(u => u._id.toString() === userId);
+        if (!userInDepartment) {
+          return res.status(403).json({
+            success: false,
+            message: 'Access denied'
+          });
+        }
+      } else {
+        query.userId = {
+          $in: departmentUsers.map(u => u._id)
+        };
+      }
     }
 
     const logs = await AttendanceLog.find(query)
