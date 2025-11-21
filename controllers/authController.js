@@ -224,7 +224,9 @@ exports.getMe = async (req, res) => {
           departments: user.departments,
           languagePreference: user.languagePreference,
           leaveBalance: user.leaveBalance,
-          isActive: user.isActive
+          isActive: user.isActive,
+          workDays: user.workDays || [],
+          workSchedule: user.workSchedule || {}
         }
       }
     });

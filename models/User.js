@@ -52,6 +52,14 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  workDays: [{
+    type: String,
+    enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+  }],
+  workSchedule: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
   refreshToken: {
     type: String,
     select: false
@@ -65,23 +73,23 @@ const userSchema = new mongoose.Schema({
 });
 
 // Hash password before saving
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
     return next();
   }
-  
+
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
 // Method to compare password
-userSchema.methods.comparePassword = async function(candidatePassword) {
+userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
 // Ensure supervisor has departments array
-userSchema.pre('save', function(next) {
+userSchema.pre('save', function (next) {
   if (this.role === 'supervisor' && (!this.departments || this.departments.length === 0)) {
     if (this.department && this.department !== 'other') {
       this.departments = [this.department];

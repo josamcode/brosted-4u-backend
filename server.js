@@ -45,18 +45,51 @@ app.use(helmet({
   contentSecurityPolicy: false
 }));
 
-// Rate limiting
+// Rate limiting - Increased limits to prevent frequent rate limit errors
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: 2000, // Increased to 2000 requests per 15 minutes (was 500)
+  message: {
+    error: 'Too many requests',
+    message: 'Too many requests from this IP, please try again later.'
+  },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health';
+  },
+  handler: (req, res) => {
+    const retryAfter = Math.ceil((req.rateLimit.resetTime - Date.now()) / 1000);
+    res.status(429).json({
+      success: false,
+      error: 'Too many requests',
+      message: 'Too many requests from this IP, please try again later.',
+      retryAfter: retryAfter > 0 ? retryAfter : 0
+    });
+  }
 });
 app.use('/api/', limiter);
 
-// Auth rate limiting (stricter)
+// Auth rate limiting (stricter but still reasonable)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: 'Too many login attempts, please try again later'
+  max: 20, // Increased from 5 to 20 for better UX
+  message: {
+    error: 'Too many login attempts',
+    message: 'Too many login attempts, please try again later'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    const retryAfter = Math.ceil((req.rateLimit.resetTime - Date.now()) / 1000);
+    res.status(429).json({
+      success: false,
+      error: 'Too many login attempts',
+      message: 'Too many login attempts, please try again later.',
+      retryAfter: retryAfter > 0 ? retryAfter : 0
+    });
+  }
 });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);

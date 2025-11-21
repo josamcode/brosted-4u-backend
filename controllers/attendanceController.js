@@ -194,6 +194,48 @@ exports.recordAttendance = async (req, res) => {
       });
     }
 
+    // Check today's attendance status (using UTC to avoid timezone issues)
+    const now = new Date();
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const todayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+
+    // Check if user already has attendance records for today
+    const todayAttendance = await AttendanceLog.find({
+      userId: req.user.id,
+      timestamp: {
+        $gte: todayStart,
+        $lte: todayEnd
+      }
+    }).sort({ timestamp: 1 });
+
+    // Check for existing check-in today
+    const hasCheckInToday = todayAttendance.some(log => log.type === 'checkin');
+    // Check for existing check-out today
+    const hasCheckOutToday = todayAttendance.some(log => log.type === 'checkout');
+
+    // Validation rules
+    if (type === 'checkin') {
+      if (hasCheckInToday) {
+        return res.status(400).json({
+          success: false,
+          message: 'You have already checked in today'
+        });
+      }
+    } else if (type === 'checkout') {
+      if (!hasCheckInToday) {
+        return res.status(400).json({
+          success: false,
+          message: 'You must check in before checking out'
+        });
+      }
+      if (hasCheckOutToday) {
+        return res.status(400).json({
+          success: false,
+          message: 'You have already checked out today'
+        });
+      }
+    }
+
     // Get request metadata
     const ip = req.ip || req.connection.remoteAddress;
     const userAgent = req.get('user-agent');
@@ -255,10 +297,15 @@ exports.getMyAttendance = async (req, res) => {
       .populate('tokenId', 'sequenceNumber')
       .populate('userId', 'name email department');
 
-    // Group logs by date
+    // Group logs by date (use UTC to avoid timezone issues)
     const groupedByDate = {};
     logs.forEach(log => {
-      const date = new Date(log.timestamp).toLocaleDateString('en-CA'); // YYYY-MM-DD format
+      // Use UTC date to avoid timezone shifts
+      const logDate = new Date(log.timestamp);
+      const year = logDate.getUTCFullYear();
+      const month = String(logDate.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(logDate.getUTCDate()).padStart(2, '0');
+      const date = `${year}-${month}-${day}`; // YYYY-MM-DD format
 
       if (!groupedByDate[date]) {
         groupedByDate[date] = {
@@ -467,33 +514,65 @@ exports.getAllAttendanceGrouped = async (req, res) => {
     const logs = await AttendanceLog.find(query)
       .sort({ timestamp: -1 })
       .populate('tokenId', 'sequenceNumber')
-      .populate('userId', 'name email department');
+      .populate({
+        path: 'userId',
+        select: 'name email department',
+        match: { _id: { $exists: true } } // Only populate if user exists
+      });
 
-    // Group by date
-    const groupedByDate = {};
-    logs.forEach(log => {
-      const date = new Date(log.timestamp).toLocaleDateString('en-CA'); // YYYY-MM-DD format
+    // Filter out logs where userId population failed (user might be deleted)
+    const validLogs = logs.filter(log => log.userId && log.userId._id);
 
-      if (!groupedByDate[date]) {
-        groupedByDate[date] = { date, checkin: null, checkout: null };
+    // Group by date AND userId (use UTC to avoid timezone issues)
+    const groupedByDateAndUser = {};
+    validLogs.forEach(log => {
+
+      // Use UTC date to avoid timezone shifts
+      const logDate = new Date(log.timestamp);
+      const year = logDate.getUTCFullYear();
+      const month = String(logDate.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(logDate.getUTCDate()).padStart(2, '0');
+      const date = `${year}-${month}-${day}`; // YYYY-MM-DD format
+
+      // Create unique key for date + userId combination
+      // Handle both populated (object) and unpopulated (ObjectId) userId
+      const userId = log.userId._id
+        ? log.userId._id.toString()
+        : (log.userId.toString ? log.userId.toString() : String(log.userId));
+      const key = `${date}_${userId}`;
+
+      if (!groupedByDateAndUser[key]) {
+        groupedByDateAndUser[key] = {
+          date,
+          userId: log.userId,
+          checkin: null,
+          checkout: null
+        };
       }
 
       if (log.type === 'checkin') {
-        // Keep earliest check-in
-        if (!groupedByDate[date].checkin || new Date(log.timestamp) < new Date(groupedByDate[date].checkin.timestamp)) {
-          groupedByDate[date].checkin = log;
+        // Keep earliest check-in for this user on this date
+        if (!groupedByDateAndUser[key].checkin || new Date(log.timestamp) < new Date(groupedByDateAndUser[key].checkin.timestamp)) {
+          groupedByDateAndUser[key].checkin = log;
         }
       } else if (log.type === 'checkout') {
-        // Keep latest check-out
-        if (!groupedByDate[date].checkout || new Date(log.timestamp) > new Date(groupedByDate[date].checkout.timestamp)) {
-          groupedByDate[date].checkout = log;
+        // Keep latest check-out for this user on this date
+        if (!groupedByDateAndUser[key].checkout || new Date(log.timestamp) > new Date(groupedByDateAndUser[key].checkout.timestamp)) {
+          groupedByDateAndUser[key].checkout = log;
         }
       }
     });
 
-    // Convert to array and sort by date (newest first)
-    const formattedLogs = Object.values(groupedByDate)
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
+    // Convert to array and sort by date (newest first), then by userId
+    const formattedLogs = Object.values(groupedByDateAndUser)
+      .sort((a, b) => {
+        const dateCompare = new Date(b.date) - new Date(a.date);
+        if (dateCompare !== 0) return dateCompare;
+        // If same date, sort by user name
+        const nameA = a.userId?.name || '';
+        const nameB = b.userId?.name || '';
+        return nameA.localeCompare(nameB);
+      })
       .slice(0, parseInt(limit));
 
     res.json({

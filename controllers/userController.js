@@ -6,14 +6,14 @@ const User = require('../models/User');
 exports.getUsers = async (req, res) => {
   try {
     const { role, department, isActive, search } = req.query;
-    
+
     let query = {};
 
     // Apply filters
     if (role) query.role = role;
     if (department) query.department = department;
     if (isActive !== undefined) query.isActive = isActive === 'true';
-    
+
     // Search by name or email
     if (search) {
       query.$or = [
@@ -83,7 +83,7 @@ exports.getUser = async (req, res) => {
 // @access  Private (Admin only)
 exports.createUser = async (req, res) => {
   try {
-    const { name, email, password, phone, role, department, departments, languagePreference, leaveBalance } = req.body;
+    const { name, email, password, phone, role, department, departments, languagePreference, leaveBalance, workDays, workSchedule } = req.body;
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
@@ -103,7 +103,9 @@ exports.createUser = async (req, res) => {
       department: department || 'other',
       departments: departments || [],
       languagePreference: languagePreference || 'en',
-      leaveBalance: leaveBalance || 0
+      leaveBalance: leaveBalance || 0,
+      workDays: workDays || [],
+      workSchedule: workSchedule || {}
     });
 
     res.status(201).json({
@@ -123,7 +125,7 @@ exports.createUser = async (req, res) => {
 // @access  Private (Admin only)
 exports.updateUser = async (req, res) => {
   try {
-    const { name, email, phone, role, department, departments, languagePreference, isActive, leaveBalance } = req.body;
+    const { name, email, phone, role, department, departments, languagePreference, isActive, leaveBalance, workDays, workSchedule } = req.body;
 
     const user = await User.findById(req.params.id);
 
@@ -144,6 +146,8 @@ exports.updateUser = async (req, res) => {
     if (languagePreference) user.languagePreference = languagePreference;
     if (isActive !== undefined) user.isActive = isActive;
     if (leaveBalance !== undefined) user.leaveBalance = leaveBalance;
+    if (workDays !== undefined) user.workDays = workDays;
+    if (workSchedule !== undefined) user.workSchedule = workSchedule;
 
     await user.save();
 
