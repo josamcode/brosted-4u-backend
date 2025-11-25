@@ -19,6 +19,19 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  nationality: {
+    type: String,
+    trim: true,
+    default: 'Egyptian'
+  },
+  idNumber: {
+    type: String,
+    trim: true
+  },
+  image: {
+    type: String,
+    trim: true
+  },
   password: {
     type: String,
     required: [true, 'Password is required'],

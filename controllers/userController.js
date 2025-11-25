@@ -83,7 +83,7 @@ exports.getUser = async (req, res) => {
 // @access  Private (Admin only)
 exports.createUser = async (req, res) => {
   try {
-    const { name, email, password, phone, role, department, departments, languagePreference, leaveBalance, workDays, workSchedule } = req.body;
+    const { name, email, password, phone, role, department, departments, languagePreference, leaveBalance, workDays, workSchedule, nationality, idNumber } = req.body;
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
@@ -93,6 +93,9 @@ exports.createUser = async (req, res) => {
         message: 'User already exists with this email'
       });
     }
+
+    // Handle image upload
+    const imagePath = req.file ? `/uploads/${req.file.filename}` : undefined;
 
     const user = await User.create({
       name,
@@ -105,7 +108,10 @@ exports.createUser = async (req, res) => {
       languagePreference: languagePreference || 'en',
       leaveBalance: leaveBalance || 0,
       workDays: workDays || [],
-      workSchedule: workSchedule || {}
+      workSchedule: workSchedule || {},
+      nationality: nationality || undefined,
+      idNumber: idNumber || undefined,
+      image: imagePath
     });
 
     res.status(201).json({
@@ -125,7 +131,7 @@ exports.createUser = async (req, res) => {
 // @access  Private (Admin only)
 exports.updateUser = async (req, res) => {
   try {
-    const { name, email, phone, role, department, departments, languagePreference, isActive, leaveBalance, workDays, workSchedule } = req.body;
+    const { name, email, phone, role, department, departments, languagePreference, isActive, leaveBalance, workDays, workSchedule, nationality, idNumber } = req.body;
 
     const user = await User.findById(req.params.id);
 
@@ -134,6 +140,20 @@ exports.updateUser = async (req, res) => {
         success: false,
         message: 'User not found'
       });
+    }
+
+    // Handle image upload
+    if (req.file) {
+      // Delete old image if exists
+      if (user.image) {
+        const fs = require('fs');
+        const path = require('path');
+        const oldImagePath = path.join(process.env.UPLOAD_DIR || './uploads', path.basename(user.image));
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlinkSync(oldImagePath);
+        }
+      }
+      user.image = `/uploads/${req.file.filename}`;
     }
 
     // Update fields
@@ -148,6 +168,8 @@ exports.updateUser = async (req, res) => {
     if (leaveBalance !== undefined) user.leaveBalance = leaveBalance;
     if (workDays !== undefined) user.workDays = workDays;
     if (workSchedule !== undefined) user.workSchedule = workSchedule;
+    if (nationality !== undefined) user.nationality = nationality;
+    if (idNumber !== undefined) user.idNumber = idNumber;
 
     await user.save();
 

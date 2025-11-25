@@ -120,6 +120,11 @@ const sectionSchema = new mongoose.Schema({
         id: String,
         label: { en: String, ar: String },
         fieldKey: String, // Which field goes in this column
+        fieldType: {
+          type: String,
+          enum: ['text', 'textarea', 'number', 'boolean', 'select', 'date', 'time', 'datetime', 'file'],
+          default: 'text'
+        }, // Field input type for this column
         width: { type: String, default: 'auto' }, // auto, px, %
         alignment: { type: String, enum: ['left', 'center', 'right'], default: 'left' },
         headerStyle: {
@@ -178,6 +183,15 @@ const sectionSchema = new mongoose.Schema({
       right: { type: Number, default: 10 },
       bottom: { type: Number, default: 10 },
       left: { type: Number, default: 10 }
+    },
+    // Section styling options
+    styling: {
+      titleColor: { type: String, default: '#000000' },
+      titleFontSize: { type: Number, default: 20 },
+      showTitle: { type: Boolean, default: true },
+      backgroundColor: { type: String, default: '#ffffff' },
+      textColor: { type: String, default: '#000000' },
+      borderColor: { type: String, default: '#e5e7eb' }
     }
   }
 });
