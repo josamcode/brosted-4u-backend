@@ -261,6 +261,13 @@ const formTemplateSchema = new mongoose.Schema({
       showLogo: { type: Boolean, default: true },
       showTitle: { type: Boolean, default: true },
       showDate: { type: Boolean, default: true },
+      showCompanyName: { type: Boolean, default: true },
+      showCompanyAddress: { type: Boolean, default: true },
+      layout: {
+        type: String,
+        enum: ['default', 'split'], // default: logo+company left, form title right | split: logo+company left, form title right
+        default: 'default'
+      },
       height: { type: Number, default: 80 },
       backgroundColor: { type: String, default: '#ffffff' },
       textColor: { type: String, default: '#000000' },
@@ -269,6 +276,21 @@ const formTemplateSchema = new mongoose.Schema({
         type: String,
         enum: ['left', 'center', 'right'],
         default: 'left'
+      },
+      border: {
+        show: { type: Boolean, default: true },
+        width: { type: Number, default: 4 },
+        style: {
+          type: String,
+          enum: ['solid', 'dashed', 'dotted', 'double', 'none'],
+          default: 'solid'
+        },
+        color: { type: String, default: '#dc2328' },
+        position: {
+          type: String,
+          enum: ['top', 'bottom', 'left', 'right', 'all', 'none'],
+          default: 'bottom'
+        }
       }
     },
     // Footer configuration
@@ -321,6 +343,18 @@ const formTemplateSchema = new mongoose.Schema({
       sectionSpacing: { type: Number, default: 20 },
       fieldSpacing: { type: Number, default: 10 },
       lineSpacing: { type: Number, default: 1.2 }
+    },
+    // Form metadata display settings
+    metadata: {
+      enabled: { type: Boolean, default: true },
+      showFormId: { type: Boolean, default: true },
+      showDate: { type: Boolean, default: true },
+      showShift: { type: Boolean, default: true },
+      showDepartment: { type: Boolean, default: true },
+      showFilledBy: { type: Boolean, default: true },
+      showSubmittedOn: { type: Boolean, default: true },
+      showApprovedBy: { type: Boolean, default: true },
+      showApprovalDate: { type: Boolean, default: true }
     }
   }
 }, {
