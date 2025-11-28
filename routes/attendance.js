@@ -9,7 +9,8 @@ const {
   getAttendanceStats,
   getAllAttendance,
   getAllAttendanceGrouped,
-  cleanupExpiredQRs
+  cleanupExpiredQRs,
+  checkAbsentUsers
 } = require('../controllers/attendanceController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -23,6 +24,7 @@ router.use(protect);
 router.post('/qr/generate', authorize('admin'), generateQRCode);
 router.get('/qr/current', authorize('admin'), getCurrentQR);
 router.post('/qr/cleanup', authorize('admin'), cleanupExpiredQRs);
+router.post('/check-absent', authorize('admin'), checkAbsentUsers);
 
 // All authenticated users - record attendance
 router.post('/record', recordAttendance);

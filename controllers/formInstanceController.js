@@ -1,5 +1,6 @@
 const FormInstance = require('../models/FormInstance');
 const FormTemplate = require('../models/FormTemplate');
+const { createNotification } = require('../utils/notifications');
 const User = require('../models/User');
 const pdfGenerator = require('../utils/pdfGenerator');
 
@@ -9,7 +10,7 @@ const pdfGenerator = require('../utils/pdfGenerator');
 exports.getFormInstances = async (req, res) => {
   try {
     const { templateId, status, department, dateFrom, dateTo, filledBy } = req.query;
-    
+
     let query = {};
 
     // Apply filters
@@ -17,7 +18,7 @@ exports.getFormInstances = async (req, res) => {
     if (status) query.status = status;
     if (department) query.department = department;
     if (filledBy) query.filledBy = filledBy;
-    
+
     // Date range filter
     if (dateFrom || dateTo) {
       query.date = {};
@@ -131,6 +132,31 @@ exports.createFormInstance = async (req, res) => {
     await instance.populate('templateId', 'title');
     await instance.populate('filledBy', 'name email department');
 
+    // Create notification for admins when form is submitted
+    if (status === 'submitted') {
+      const templateTitleEn = instance.templateId?.title?.en || 'Form';
+      const templateTitleAr = instance.templateId?.title?.ar || 'نموذج';
+      const userName = instance.filledBy?.name || 'User';
+
+      await createNotification({
+        type: 'form_submitted',
+        title: {
+          en: 'New Form Submitted',
+          ar: 'تم إرسال نموذج جديد'
+        },
+        message: {
+          en: `${userName} submitted a new form: ${templateTitleEn}`,
+          ar: `${userName} أرسل نموذجاً جديداً: ${templateTitleAr}`
+        },
+        data: {
+          formId: instance._id,
+          templateId: templateId,
+          filledBy: instance.filledBy._id,
+          department: instance.department
+        }
+      });
+    }
+
     res.status(201).json({
       success: true,
       data: instance
@@ -167,6 +193,9 @@ exports.updateFormInstance = async (req, res) => {
       });
     }
 
+    // Store old status to check if it changed to submitted
+    const oldStatus = instance.status;
+
     // Update fields
     if (department) instance.department = department;
     if (date) instance.date = date;
@@ -177,6 +206,31 @@ exports.updateFormInstance = async (req, res) => {
     await instance.save();
     await instance.populate('templateId', 'title');
     await instance.populate('filledBy', 'name email department');
+
+    // Create notification for admins when form status changes from draft to submitted
+    if (oldStatus === 'draft' && instance.status === 'submitted') {
+      const templateTitleEn = instance.templateId?.title?.en || 'Form';
+      const templateTitleAr = instance.templateId?.title?.ar || 'نموذج';
+      const userName = instance.filledBy?.name || 'User';
+
+      await createNotification({
+        type: 'form_submitted',
+        title: {
+          en: 'New Form Submitted',
+          ar: 'تم إرسال نموذج جديد'
+        },
+        message: {
+          en: `${userName} submitted a new form: ${templateTitleEn}`,
+          ar: `${userName} أرسل نموذجاً جديداً: ${templateTitleAr}`
+        },
+        data: {
+          formId: instance._id,
+          templateId: instance.templateId._id,
+          filledBy: instance.filledBy._id,
+          department: instance.department
+        }
+      });
+    }
 
     res.json({
       success: true,
@@ -267,6 +321,33 @@ exports.approveFormInstance = async (req, res) => {
     await instance.populate('filledBy', 'name email department');
     await instance.populate('approvedBy', 'name email');
 
+    // Create notification for admins when form is approved/rejected
+    const templateTitleEn = instance.templateId?.title?.en || 'Form';
+    const templateTitleAr = instance.templateId?.title?.ar || 'نموذج';
+    const userName = instance.filledBy?.name || 'User';
+    const action = status === 'approved' ? 'approved' : 'rejected';
+
+    await createNotification({
+      type: `form_${action}`,
+      title: {
+        en: `Form ${action === 'approved' ? 'Approved' : 'Rejected'}`,
+        ar: action === 'approved' ? 'تم الموافقة على النموذج' : 'تم رفض النموذج'
+      },
+      message: {
+        en: `Form "${templateTitleEn}" filled by ${userName} has been ${action}`,
+        ar: action === 'approved'
+          ? `تم الموافقة على النموذج "${templateTitleAr}" الذي ملأه ${userName}`
+          : `تم رفض النموذج "${templateTitleAr}" الذي ملأه ${userName}`
+      },
+      data: {
+        formId: instance._id,
+        templateId: instance.templateId._id,
+        filledBy: instance.filledBy._id,
+        approvedBy: instance.approvedBy._id,
+        status: status
+      }
+    });
+
     res.json({
       success: true,
       data: instance
@@ -343,16 +424,16 @@ exports.exportFormInstance = async (req, res) => {
 exports.getFormStats = async (req, res) => {
   try {
     const { dateFrom, dateTo, department } = req.query;
-    
+
     let matchQuery = {};
-    
+
     // Date range
     if (dateFrom || dateTo) {
       matchQuery.date = {};
       if (dateFrom) matchQuery.date.$gte = new Date(dateFrom);
       if (dateTo) matchQuery.date.$lte = new Date(dateTo);
     }
-    
+
     // Department filter
     if (department) {
       matchQuery.department = department;

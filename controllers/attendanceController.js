@@ -1,5 +1,8 @@
 const AttendanceToken = require('../models/AttendanceToken');
 const AttendanceLog = require('../models/AttendanceLog');
+const User = require('../models/User');
+const { createNotification } = require('../utils/notifications');
+const { checkAbsentUsers } = require('../utils/checkAbsentUsers');
 
 // Auto-generate QR code (called by cron job or manually by admin)
 exports.generateQRCode = async (req, res) => {
@@ -259,6 +262,48 @@ exports.recordAttendance = async (req, res) => {
 
     // Populate user info
     await attendanceLog.populate('userId', 'name email department');
+
+    // Check for late arrival on check-in
+    if (type === 'checkin') {
+      const user = await User.findById(req.user.id).select('workDays workSchedule');
+      if (user && user.workDays && user.workDays.length > 0) {
+        const today = new Date();
+        const dayName = today.toLocaleDateString('en-US', { weekday: 'lowercase' });
+        
+        if (user.workDays.includes(dayName) && user.workSchedule && user.workSchedule[dayName]) {
+          const expectedStartTime = user.workSchedule[dayName].startTime;
+          if (expectedStartTime) {
+            const [expectedHours, expectedMinutes] = expectedStartTime.split(':').map(Number);
+            const expectedTime = new Date(today);
+            expectedTime.setHours(expectedHours, expectedMinutes, 0, 0);
+            
+            const checkinTime = new Date(attendanceLog.timestamp);
+            if (checkinTime > expectedTime) {
+              const lateMinutes = Math.floor((checkinTime - expectedTime) / (1000 * 60));
+              
+              await createNotification({
+                type: 'user_late',
+                title: {
+                  en: 'Employee Late Arrival',
+                  ar: 'تأخر موظف'
+                },
+                message: {
+                  en: `${req.user.name} arrived ${lateMinutes} minute(s) late`,
+                  ar: `${req.user.name} وصل متأخراً ${lateMinutes} دقيقة`
+                },
+                data: {
+                  userId: req.user.id,
+                  attendanceLogId: attendanceLog._id,
+                  lateMinutes: lateMinutes,
+                  expectedTime: expectedStartTime,
+                  actualTime: checkinTime.toISOString()
+                }
+              });
+            }
+          }
+        }
+      }
+    }
 
     res.json({
       success: true,
@@ -582,6 +627,23 @@ exports.getAllAttendanceGrouped = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching grouped attendance:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// Check for absent users (can be called manually or by cron)
+exports.checkAbsentUsers = async (req, res) => {
+  try {
+    await checkAbsentUsers();
+    res.json({
+      success: true,
+      message: 'Absent users check completed'
+    });
+  } catch (error) {
+    console.error('Error checking absent users:', error);
     res.status(500).json({
       success: false,
       message: error.message

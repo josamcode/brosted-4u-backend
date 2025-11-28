@@ -83,7 +83,7 @@ exports.getUser = async (req, res) => {
 // @access  Private (Admin only)
 exports.createUser = async (req, res) => {
   try {
-    const { name, email, password, phone, role, department, departments, languagePreference, leaveBalance, workDays, workSchedule, nationality, idNumber } = req.body;
+    const { name, email, password, phone, role, department, departments, languagePreference, leaveBalance, workDays, workSchedule, nationality, idNumber, jobTitle } = req.body;
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
@@ -111,7 +111,36 @@ exports.createUser = async (req, res) => {
       workSchedule: workSchedule || {},
       nationality: nationality || undefined,
       idNumber: idNumber || undefined,
+      jobTitle: jobTitle || undefined,
       image: imagePath
+    });
+
+    // Create notification for admins when new user is created
+    const roleMap = {
+      admin: { en: 'Admin', ar: 'مدير' },
+      supervisor: { en: 'Supervisor', ar: 'مشرف' },
+      employee: { en: 'Employee', ar: 'موظف' }
+    };
+    const roleEn = roleMap[role]?.en || role;
+    const roleAr = roleMap[role]?.ar || role;
+    
+    await createNotification({
+      type: 'user_created',
+      title: {
+        en: 'New User Created',
+        ar: 'تم إنشاء مستخدم جديد'
+      },
+      message: {
+        en: `New user "${name}" has been created with role: ${roleEn}`,
+        ar: `تم إنشاء مستخدم جديد "${name}" بدور: ${roleAr}`
+      },
+      data: {
+        userId: user._id,
+        name: name,
+        email: email,
+        role: role,
+        department: department
+      }
     });
 
     res.status(201).json({
@@ -131,7 +160,7 @@ exports.createUser = async (req, res) => {
 // @access  Private (Admin only)
 exports.updateUser = async (req, res) => {
   try {
-    const { name, email, phone, role, department, departments, languagePreference, isActive, leaveBalance, workDays, workSchedule, nationality, idNumber } = req.body;
+    const { name, email, phone, role, department, departments, languagePreference, isActive, leaveBalance, workDays, workSchedule, nationality, idNumber, jobTitle } = req.body;
 
     const user = await User.findById(req.params.id);
 
@@ -170,6 +199,7 @@ exports.updateUser = async (req, res) => {
     if (workSchedule !== undefined) user.workSchedule = workSchedule;
     if (nationality !== undefined) user.nationality = nationality;
     if (idNumber !== undefined) user.idNumber = idNumber;
+    if (jobTitle !== undefined) user.jobTitle = jobTitle;
 
     await user.save();
 
@@ -250,6 +280,33 @@ exports.resetPassword = async (req, res) => {
     res.json({
       success: true,
       message: 'Password reset successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Get admin user (for employees to send messages)
+// @route   GET /api/users/admin
+// @access  Private (All authenticated users)
+exports.getAdminUser = async (req, res) => {
+  try {
+    const admin = await User.findOne({ role: 'admin', isActive: true })
+      .select('_id name email department role');
+    
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin user not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: admin
     });
   } catch (error) {
     res.status(500).json({

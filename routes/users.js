@@ -6,12 +6,18 @@ const {
   createUser,
   updateUser,
   deleteUser,
-  resetPassword
+  resetPassword,
+  getAdminUser
 } = require('../controllers/userController');
 const { protect, authorize } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 
 router.use(protect);
+
+// Public route for all authenticated users (to get admin for messaging)
+router.get('/admin', getAdminUser);
+
+// Protected routes (admin, supervisor only)
 router.use(authorize('admin', 'supervisor'));
 
 router.route('/')

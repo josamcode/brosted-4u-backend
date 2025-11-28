@@ -106,6 +106,8 @@ app.use('/api/form-instances', require('./routes/formInstances'));
 app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/leaves', require('./routes/leaves'));
 app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/messages', require('./routes/messages'));
 
 // Health check
 app.get('/health', (req, res) => {

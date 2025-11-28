@@ -28,6 +28,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  jobTitle: {
+    type: String,
+    trim: true
+  },
   image: {
     type: String,
     trim: true

@@ -1,5 +1,6 @@
 const LeaveRequest = require('../models/LeaveRequest');
 const User = require('../models/User');
+const { createNotification } = require('../utils/notifications');
 
 // @desc    Get all leave requests
 // @route   GET /api/leaves
@@ -158,6 +159,39 @@ exports.createLeaveRequest = async (req, res) => {
     });
 
     await leave.populate('userId', 'name email department');
+
+    // Create notification for admins when leave is requested
+    const userName = leave.userId?.name || 'User';
+    const leaveTypeMap = {
+      vacation: { en: 'Vacation', ar: 'إجازة' },
+      sick: { en: 'Sick', ar: 'مرضية' },
+      permission: { en: 'Permission', ar: 'إذن' },
+      emergency: { en: 'Emergency', ar: 'طارئ' },
+      unpaid: { en: 'Unpaid', ar: 'بدون راتب' },
+      other: { en: 'Other', ar: 'أخرى' }
+    };
+    const leaveTypeEn = leaveTypeMap[type]?.en || type;
+    const leaveTypeAr = leaveTypeMap[type]?.ar || type;
+
+    await createNotification({
+      type: 'leave_requested',
+      title: {
+        en: 'New Leave Request',
+        ar: 'طلب إجازة جديد'
+      },
+      message: {
+        en: `${userName} requested ${calculatedDays} day(s) of ${leaveTypeEn} leave`,
+        ar: `${userName} طلب ${calculatedDays} يوم من إجازة ${leaveTypeAr}`
+      },
+      data: {
+        leaveId: leave._id,
+        userId: leave.userId._id,
+        type: type,
+        days: calculatedDays,
+        startDate: start.toISOString(),
+        endDate: end.toISOString()
+      }
+    });
 
     res.status(201).json({
       success: true,
@@ -338,6 +372,42 @@ exports.approveLeaveRequest = async (req, res) => {
 
     await leave.populate('userId', 'name email department');
     await leave.populate('approvedBy', 'name email');
+
+    // Create notification for admins when leave is approved/rejected
+    const userName = leave.userId?.name || 'User';
+    const leaveTypeMap = {
+      vacation: { en: 'Vacation', ar: 'إجازة' },
+      sick: { en: 'Sick', ar: 'مرضية' },
+      permission: { en: 'Permission', ar: 'إذن' },
+      emergency: { en: 'Emergency', ar: 'طارئ' },
+      unpaid: { en: 'Unpaid', ar: 'بدون راتب' },
+      other: { en: 'Other', ar: 'أخرى' }
+    };
+    const leaveTypeEn = leaveTypeMap[leave.type]?.en || leave.type;
+    const leaveTypeAr = leaveTypeMap[leave.type]?.ar || leave.type;
+    const action = status === 'approved' ? 'approved' : 'rejected';
+
+    await createNotification({
+      type: `leave_${action}`,
+      title: {
+        en: `Leave Request ${action === 'approved' ? 'Approved' : 'Rejected'}`,
+        ar: action === 'approved' ? 'تم الموافقة على طلب الإجازة' : 'تم رفض طلب الإجازة'
+      },
+      message: {
+        en: `Leave request from ${userName} (${leave.days} day(s) ${leaveTypeEn}) has been ${action}`,
+        ar: action === 'approved'
+          ? `تم الموافقة على طلب إجازة من ${userName} (${leave.days} يوم ${leaveTypeAr})`
+          : `تم رفض طلب إجازة من ${userName} (${leave.days} يوم ${leaveTypeAr})`
+      },
+      data: {
+        leaveId: leave._id,
+        userId: leave.userId._id,
+        approvedBy: leave.approvedBy._id,
+        type: leave.type,
+        days: leave.days,
+        status: status
+      }
+    });
 
     res.json({
       success: true,
