@@ -1,6 +1,7 @@
 const LeaveRequest = require('../models/LeaveRequest');
 const User = require('../models/User');
 const { createNotification } = require('../utils/notifications');
+const { sendEmailToAdmins, sendEmailToUser, getLeaveRequestedEmail, getLeaveApprovedEmail, getLeaveRejectedEmail } = require('../utils/emailService');
 
 // @desc    Get all leave requests
 // @route   GET /api/leaves
@@ -201,6 +202,16 @@ exports.createLeaveRequest = async (req, res) => {
       }
     });
 
+    // Send email to admins
+    await sendEmailToAdmins((language) => getLeaveRequestedEmail({
+      userName: userName,
+      leaveType: { en: leaveTypeEn, ar: leaveTypeAr },
+      days: calculatedDays,
+      startDate: start,
+      endDate: end,
+      department: leave.userId?.department || 'N/A'
+    }, language), leave.userId?.department);
+
     res.status(201).json({
       success: true,
       data: leave
@@ -368,6 +379,8 @@ exports.approveLeaveRequest = async (req, res) => {
     leave.approvalNotes = notes || '';
 
     await leave.save();
+    await leave.populate('userId', 'name email department languagePreference');
+    await leave.populate('approvedBy', 'name email');
 
     // Update user's leave balance if approved
     if (status === 'approved') {
@@ -377,9 +390,6 @@ exports.approveLeaveRequest = async (req, res) => {
         await user.save();
       }
     }
-
-    await leave.populate('userId', 'name email department');
-    await leave.populate('approvedBy', 'name email');
 
     // Create notification for admins when leave is approved/rejected
     const userName = leave.userId?.name || 'User';
@@ -416,6 +426,30 @@ exports.approveLeaveRequest = async (req, res) => {
         status: status
       }
     });
+
+    // Send email to user
+    if (leave.userId?.email) {
+      const userLanguage = leave.userId?.languagePreference || 'ar';
+
+      if (status === 'approved') {
+        await sendEmailToUser(leave.userId.email, (language) => getLeaveApprovedEmail({
+          leaveType: { en: leaveTypeEn, ar: leaveTypeAr },
+          days: leave.days,
+          startDate: leave.startDate,
+          endDate: leave.endDate,
+          approvedBy: leave.approvedBy
+        }, language), userLanguage);
+      } else {
+        await sendEmailToUser(leave.userId.email, (language) => getLeaveRejectedEmail({
+          leaveType: { en: leaveTypeEn, ar: leaveTypeAr },
+          days: leave.days,
+          startDate: leave.startDate,
+          endDate: leave.endDate,
+          rejectedBy: leave.approvedBy,
+          rejectionNotes: notes || ''
+        }, language), userLanguage);
+      }
+    }
 
     res.json({
       success: true,

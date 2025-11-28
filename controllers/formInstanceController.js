@@ -3,6 +3,7 @@ const FormTemplate = require('../models/FormTemplate');
 const { createNotification } = require('../utils/notifications');
 const User = require('../models/User');
 const pdfGenerator = require('../utils/pdfGenerator');
+const { sendEmailToAdmins, sendEmailToUser, getFormSubmittedEmail, getFormApprovedEmail, getFormRejectedEmail } = require('../utils/emailService');
 
 // @desc    Get all form instances
 // @route   GET /api/form-instances
@@ -170,6 +171,15 @@ exports.createFormInstance = async (req, res) => {
           department: instance.department
         }
       });
+
+      // Send email to admins
+      await sendEmailToAdmins((language) => getFormSubmittedEmail({
+        templateTitle: { en: templateTitleEn, ar: templateTitleAr },
+        filledBy: instance.filledBy,
+        department: instance.department,
+        date: instance.date,
+        shift: instance.shift
+      }, language), instance.department);
     }
 
     res.status(201).json({
@@ -245,6 +255,15 @@ exports.updateFormInstance = async (req, res) => {
           department: instance.department
         }
       });
+
+      // Send email to admins
+      await sendEmailToAdmins((language) => getFormSubmittedEmail({
+        templateTitle: { en: templateTitleEn, ar: templateTitleAr },
+        filledBy: instance.filledBy,
+        department: instance.department,
+        date: instance.date,
+        shift: instance.shift
+      }, language), instance.department);
     }
 
     res.json({
@@ -386,6 +405,26 @@ exports.approveFormInstance = async (req, res) => {
         status: status
       }
     });
+
+    // Send email to user who filled the form
+    if (instance.filledBy?.email) {
+      const userLanguage = instance.filledBy?.languagePreference || 'ar';
+
+      if (status === 'approved') {
+        await sendEmailToUser(instance.filledBy.email, (language) => getFormApprovedEmail({
+          templateTitle: { en: templateTitleEn, ar: templateTitleAr },
+          approvedBy: instance.approvedBy,
+          approvalDate: instance.approvalDate
+        }, language), userLanguage);
+      } else {
+        await sendEmailToUser(instance.filledBy.email, (language) => getFormRejectedEmail({
+          templateTitle: { en: templateTitleEn, ar: templateTitleAr },
+          rejectedBy: instance.approvedBy,
+          rejectionDate: instance.approvalDate,
+          rejectionNotes: notes || ''
+        }, language), userLanguage);
+      }
+    }
 
     res.json({
       success: true,
