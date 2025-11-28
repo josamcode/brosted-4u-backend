@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const { createNotification } = require('../utils/notifications');
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -123,7 +124,7 @@ exports.createUser = async (req, res) => {
     };
     const roleEn = roleMap[role]?.en || role;
     const roleAr = roleMap[role]?.ar || role;
-    
+
     await createNotification({
       type: 'user_created',
       title: {
@@ -296,7 +297,7 @@ exports.getAdminUser = async (req, res) => {
   try {
     const admin = await User.findOne({ role: 'admin', isActive: true })
       .select('_id name email department role');
-    
+
     if (!admin) {
       return res.status(404).json({
         success: false,

@@ -51,11 +51,20 @@ const leaveRequestSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Calculate number of days before saving
-leaveRequestSchema.pre('save', function(next) {
-  if (this.startDate && this.endDate) {
+// Calculate number of days before saving (only if days is not already set)
+leaveRequestSchema.pre('save', function (next) {
+  // Only calculate if days is not set or is 0
+  if (this.startDate && this.endDate && (!this.days || this.days === 0)) {
     const diffTime = Math.abs(this.endDate - this.startDate);
-    this.days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+    // For permission type, calculate days based on hours (8 hours = 1 day)
+    if (this.type === 'permission') {
+      const hours = diffTime / (1000 * 60 * 60);
+      this.days = hours / 8; // Convert hours to days (assuming 8 hours work day)
+    } else {
+      // For other types, calculate full days
+      this.days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    }
   }
   next();
 });

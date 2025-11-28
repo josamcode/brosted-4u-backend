@@ -79,6 +79,14 @@ exports.getFormTemplate = async (req, res) => {
 // @access  Private (Admin only)
 exports.createFormTemplate = async (req, res) => {
   try {
+    // Only management department admins can create templates
+    if (req.user.role !== 'admin' || req.user.department !== 'management') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only management department admins can create form templates'
+      });
+    }
+
     const {
       title,
       description,
@@ -121,6 +129,14 @@ exports.createFormTemplate = async (req, res) => {
 // @access  Private (Admin only)
 exports.updateFormTemplate = async (req, res) => {
   try {
+    // Only management department admins can update templates
+    if (req.user.role !== 'admin' || req.user.department !== 'management') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only management department admins can update form templates'
+      });
+    }
+
     const {
       title,
       description,
@@ -174,6 +190,14 @@ exports.updateFormTemplate = async (req, res) => {
 // @access  Private (Admin only)
 exports.deleteFormTemplate = async (req, res) => {
   try {
+    // Only management department admins can delete templates
+    if (req.user.role !== 'admin' || req.user.department !== 'management') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only management department admins can delete form templates'
+      });
+    }
+
     const template = await FormTemplate.findById(req.params.id);
 
     if (!template) {

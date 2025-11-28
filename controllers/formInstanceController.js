@@ -31,6 +31,13 @@ exports.getFormInstances = async (req, res) => {
       query.filledBy = req.user.id;
     } else if (req.user.role === 'supervisor') {
       query.department = { $in: req.user.departments };
+    } else if (req.user.role === 'admin') {
+      // Only management admins can see all forms
+      // Other admins see only their department forms
+      if (req.user.department !== 'management') {
+        query.department = req.user.department;
+      }
+      // If management admin, no filter - see all forms
     }
 
     const instances = await FormInstance.find(query)
@@ -78,6 +85,14 @@ exports.getFormInstance = async (req, res) => {
     }
 
     if (req.user.role === 'supervisor' && !req.user.departments.includes(instance.department)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have access to this form'
+      });
+    }
+
+    // Non-management admins can only access their department forms
+    if (req.user.role === 'admin' && req.user.department !== 'management' && instance.department !== req.user.department) {
       return res.status(403).json({
         success: false,
         message: 'You do not have access to this form'
@@ -266,6 +281,22 @@ exports.deleteFormInstance = async (req, res) => {
       });
     }
 
+    // Supervisors can only delete their department forms
+    if (req.user.role === 'supervisor' && !req.user.departments.includes(instance.department)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to delete this form'
+      });
+    }
+
+    // Non-management admins can only delete their department forms
+    if (req.user.role === 'admin' && req.user.department !== 'management' && instance.department !== req.user.department) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to delete this form'
+      });
+    }
+
     await instance.deleteOne();
 
     res.json({
@@ -305,6 +336,14 @@ exports.approveFormInstance = async (req, res) => {
 
     // Check department access for supervisors
     if (req.user.role === 'supervisor' && !req.user.departments.includes(instance.department)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have access to approve forms from this department'
+      });
+    }
+
+    // Non-management admins can only approve their department forms
+    if (req.user.role === 'admin' && req.user.department !== 'management' && instance.department !== req.user.department) {
       return res.status(403).json({
         success: false,
         message: 'You do not have access to approve forms from this department'
@@ -394,6 +433,14 @@ exports.exportFormInstance = async (req, res) => {
       });
     }
 
+    // Non-management admins can only export their department forms
+    if (req.user.role === 'admin' && req.user.department !== 'management' && instance.department !== req.user.department) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have access to this form'
+      });
+    }
+
     // Generate PDF
     const pdfBuffer = await pdfGenerator.generateFormPDF(
       instance,
@@ -439,6 +486,9 @@ exports.getFormStats = async (req, res) => {
       matchQuery.department = department;
     } else if (req.user.role === 'supervisor') {
       matchQuery.department = { $in: req.user.departments };
+    } else if (req.user.role === 'admin' && req.user.department !== 'management') {
+      // Non-management admins see only their department stats
+      matchQuery.department = req.user.department;
     }
 
     const stats = await FormInstance.aggregate([

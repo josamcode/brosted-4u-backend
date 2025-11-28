@@ -129,7 +129,15 @@ exports.createLeaveRequest = async (req, res) => {
     let calculatedDays = days;
     if (!calculatedDays || calculatedDays <= 0) {
       const diffTime = Math.abs(end - start);
-      calculatedDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+      // For permission type, calculate days based on hours (8 hours = 1 day)
+      if (type === 'permission') {
+        const hours = diffTime / (1000 * 60 * 60);
+        calculatedDays = hours / 8; // Convert hours to days (assuming 8 hours work day)
+      } else {
+        // For other types, calculate full days
+        calculatedDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      }
     }
 
     // Check for overlapping leave requests
@@ -154,7 +162,7 @@ exports.createLeaveRequest = async (req, res) => {
       startDate: start,
       endDate: end,
       reason,
-      days: calculatedDays,
+      days: parseFloat(calculatedDays.toFixed(2)), // Ensure it's a number with 2 decimal places
       status: 'pending'
     });
 
