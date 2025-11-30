@@ -25,7 +25,8 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Enable CORS
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://brosted-4u-frontend.vercel.app'
+  "https://brosted4u.com",
+  "https://www.brosted4u.com"
 ];
 
 app.use(cors({
