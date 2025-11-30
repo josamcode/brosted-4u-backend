@@ -276,11 +276,47 @@ exports.resetPassword = async (req, res) => {
     }
 
     user.password = newPassword;
+    // Clear reset request flags
+    user.passwordResetRequested = false;
+    user.passwordResetRequestDate = undefined;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
     await user.save();
+
+    // Send email to user
+    const { getPasswordResetByAdminEmail, sendEmailToUser } = require('../utils/emailService');
+    const userLanguage = user.languagePreference || 'ar';
+    await sendEmailToUser(user.email, (language) => getPasswordResetByAdminEmail({
+      userName: user.name,
+      newPassword: newPassword,
+      resetBy: req.user.name
+    }, language), userLanguage);
 
     res.json({
       success: true,
       message: 'Password reset successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Get password reset requests
+// @route   GET /api/users/password-reset-requests
+// @access  Private (Admin only)
+exports.getPasswordResetRequests = async (req, res) => {
+  try {
+    const users = await User.find({
+      passwordResetRequested: true
+    }).select('name email department passwordResetRequestDate _id').sort('-passwordResetRequestDate');
+
+    res.json({
+      success: true,
+      count: users.length,
+      data: users
     });
   } catch (error) {
     res.status(500).json({

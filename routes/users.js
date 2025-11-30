@@ -7,7 +7,8 @@ const {
   updateUser,
   deleteUser,
   resetPassword,
-  getAdminUser
+  getAdminUser,
+  getPasswordResetRequests
 } = require('../controllers/userController');
 const { protect, authorize } = require('../middleware/auth');
 const upload = require('../middleware/upload');
@@ -30,6 +31,7 @@ router.route('/:id')
   .delete(authorize('admin'), deleteUser);
 
 router.put('/:id/reset-password', authorize('admin'), resetPassword);
+router.get('/password-reset-requests', authorize('admin'), getPasswordResetRequests);
 
 module.exports = router;
 

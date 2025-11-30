@@ -413,6 +413,96 @@ const sendEmailToUser = async (userEmail, emailData, language = 'ar') => {
   }
 };
 
+// Password reset email
+const getPasswordResetEmail = (resetData, language = 'en') => {
+  const isRTL = language === 'ar';
+  const title = isRTL ? 'إعادة تعيين كلمة المرور' : 'Password Reset';
+  const resetLink = resetData.resetLink;
+  const userName = resetData.userName || 'User';
+  const expiresIn = resetData.expiresIn || '1 hour';
+
+  const content = `
+    <h2>${title}</h2>
+    <p>${isRTL ? `مرحباً ${userName},` : `Hello ${userName},`}</p>
+    <p>${isRTL ? 'لقد طلبت إعادة تعيين كلمة المرور لحسابك.' : 'You have requested to reset your password.'}</p>
+    <p>${isRTL ? 'انقر على الزر أدناه لإعادة تعيين كلمة المرور:' : 'Click the button below to reset your password:'}</p>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${resetLink}" class="email-button" style="display: inline-block; padding: 12px 30px; background-color: #dc2328; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-weight: 600;">
+        ${isRTL ? 'إعادة تعيين كلمة المرور' : 'Reset Password'}
+      </a>
+    </div>
+    <p style="font-size: 14px; color: #6b7280;">
+      ${isRTL ? `أو انسخ والصق هذا الرابط في المتصفح: ${resetLink}` : `Or copy and paste this link in your browser: ${resetLink}`}
+    </p>
+    <p style="font-size: 14px; color: #dc2328;">
+      ${isRTL ? `⚠️ هذا الرابط سينتهي خلال ${expiresIn}.` : `⚠️ This link will expire in ${expiresIn}.`}
+    </p>
+    <p style="font-size: 14px; color: #6b7280;">
+      ${isRTL ? 'إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذا الإيميل.' : 'If you did not request a password reset, please ignore this email.'}
+    </p>
+  `;
+
+  return {
+    subject: title,
+    html: getEmailTemplate(title, content, language)
+  };
+};
+
+// Password reset request email (to admins)
+const getPasswordResetRequestEmail = (requestData, language = 'en') => {
+  const isRTL = language === 'ar';
+  const title = isRTL ? 'طلب إعادة تعيين كلمة المرور' : 'Password Reset Request';
+  const userName = requestData.userName || 'User';
+  const userEmail = requestData.userEmail || 'N/A';
+  const department = requestData.department || 'N/A';
+  const requestDate = new Date(requestData.requestDate).toLocaleDateString(language === 'ar' ? 'ar-SA' : 'en-US');
+
+  const content = `
+    <h2>${title}</h2>
+    <p>${isRTL ? `تم طلب إعادة تعيين كلمة المرور من قبل مستخدم:` : `A password reset has been requested by a user:`}</p>
+    <div class="info-box">
+      <p><strong>${isRTL ? 'اسم المستخدم:' : 'User Name:'}</strong> ${userName}</p>
+      <p><strong>${isRTL ? 'البريد الإلكتروني:' : 'Email:'}</strong> ${userEmail}</p>
+      <p><strong>${isRTL ? 'القسم:' : 'Department:'}</strong> ${department}</p>
+      <p><strong>${isRTL ? 'تاريخ الطلب:' : 'Request Date:'}</strong> ${requestDate}</p>
+    </div>
+    <p>${isRTL ? 'يرجى مراجعة الطلب وإعادة تعيين كلمة المرور للمستخدم من لوحة التحكم.' : 'Please review the request and reset the user\'s password from the dashboard.'}</p>
+  `;
+
+  return {
+    subject: title,
+    html: getEmailTemplate(title, content, language)
+  };
+};
+
+// Password reset by admin email
+const getPasswordResetByAdminEmail = (resetData, language = 'en') => {
+  const isRTL = language === 'ar';
+  const title = isRTL ? 'تم إعادة تعيين كلمة المرور' : 'Password Has Been Reset';
+  const userName = resetData.userName || 'User';
+  const newPassword = resetData.newPassword || '';
+  const resetBy = resetData.resetBy || 'Admin';
+
+  const content = `
+    <h2>${title}</h2>
+    <p>${isRTL ? `مرحباً ${userName},` : `Hello ${userName},`}</p>
+    <p>${isRTL ? 'تم إعادة تعيين كلمة المرور لحسابك من قبل المدير.' : 'Your password has been reset by an administrator.'}</p>
+    <div class="info-box">
+      <p><strong>${isRTL ? 'تمت إعادة التعيين بواسطة:' : 'Reset By:'}</strong> ${resetBy}</p>
+      ${newPassword ? `<p><strong>${isRTL ? 'كلمة المرور الجديدة:' : 'New Password:'}</strong> <code style="background-color: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-family: monospace;">${newPassword}</code></p>` : ''}
+    </div>
+    <p style="color: #dc2328; font-weight: 600;">
+      ${isRTL ? '⚠️ يرجى تغيير كلمة المرور بعد تسجيل الدخول.' : '⚠️ Please change your password after logging in.'}
+    </p>
+    <p>${isRTL ? 'يمكنك تسجيل الدخول الآن باستخدام كلمة المرور الجديدة.' : 'You can now log in using your new password.'}</p>
+  `;
+
+  return {
+    subject: title,
+    html: getEmailTemplate(title, content, language)
+  };
+};
+
 module.exports = {
   sendEmail,
   sendEmailToAdmins,
@@ -422,6 +512,9 @@ module.exports = {
   getFormRejectedEmail,
   getLeaveRequestedEmail,
   getLeaveApprovedEmail,
-  getLeaveRejectedEmail
+  getLeaveRejectedEmail,
+  getPasswordResetEmail,
+  getPasswordResetRequestEmail,
+  getPasswordResetByAdminEmail
 };
 

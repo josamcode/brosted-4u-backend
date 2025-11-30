@@ -65,3 +65,8 @@ exports.verifyQRToken = (token) => {
   }
 };
 
+// Generate password reset token
+exports.generateResetToken = () => {
+  return crypto.randomBytes(32).toString('hex');
+};
+

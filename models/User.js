@@ -81,6 +81,21 @@ const userSchema = new mongoose.Schema({
     type: String,
     select: false
   },
+  resetPasswordToken: {
+    type: String,
+    select: false
+  },
+  resetPasswordExpire: {
+    type: Date,
+    select: false
+  },
+  passwordResetRequested: {
+    type: Boolean,
+    default: false
+  },
+  passwordResetRequestDate: {
+    type: Date
+  },
   metadata: {
     type: Map,
     of: String
