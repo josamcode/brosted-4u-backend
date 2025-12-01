@@ -4,6 +4,8 @@ const { createNotification } = require('../utils/notifications');
 const User = require('../models/User');
 const pdfGenerator = require('../utils/pdfGenerator');
 const { sendEmailToAdmins, sendEmailToUser, getFormSubmittedEmail, getFormApprovedEmail, getFormRejectedEmail } = require('../utils/emailService');
+const path = require('path');
+const fs = require('fs');
 
 // @desc    Get all form instances
 // @route   GET /api/form-instances
@@ -27,10 +29,8 @@ exports.getFormInstances = async (req, res) => {
       if (dateTo) query.date.$lte = new Date(dateTo);
     }
 
-    // Role-based filtering
-    if (req.user.role === 'employee') {
-      query.filledBy = req.user.id;
-    } else if (req.user.role === 'supervisor') {
+    // Role-based filtering (employees are blocked at route level)
+    if (req.user.role === 'supervisor') {
       query.department = { $in: req.user.departments };
     } else if (req.user.role === 'admin') {
       // Only management admins can see all forms
@@ -77,13 +77,7 @@ exports.getFormInstance = async (req, res) => {
       });
     }
 
-    // Check access rights
-    if (req.user.role === 'employee' && instance.filledBy._id.toString() !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have access to this form'
-      });
-    }
+    // Check access rights (employees are blocked at route level)
 
     if (req.user.role === 'supervisor' && !req.user.departments.includes(instance.department)) {
       return res.status(403).json({
@@ -210,13 +204,7 @@ exports.updateFormInstance = async (req, res) => {
       });
     }
 
-    // Only owner or admin/supervisor can update
-    if (req.user.role === 'employee' && instance.filledBy.toString() !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to update this form'
-      });
-    }
+    // Only admin/supervisor can update (employees are blocked at route level)
 
     // Store old status to check if it changed to submitted
     const oldStatus = instance.status;
@@ -292,13 +280,7 @@ exports.deleteFormInstance = async (req, res) => {
       });
     }
 
-    // Only owner or admin can delete
-    if (req.user.role === 'employee' && instance.filledBy.toString() !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to delete this form'
-      });
-    }
+    // Only admin/supervisor can delete (employees are blocked at route level)
 
     // Supervisors can only delete their department forms
     if (req.user.role === 'supervisor' && !req.user.departments.includes(instance.department)) {
@@ -457,13 +439,7 @@ exports.exportFormInstance = async (req, res) => {
       });
     }
 
-    // Check access rights
-    if (req.user.role === 'employee' && instance.filledBy._id.toString() !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have access to this form'
-      });
-    }
+    // Check access rights (employees are blocked at route level)
 
     if (req.user.role === 'supervisor' && !req.user.departments.includes(instance.department)) {
       return res.status(403).json({
@@ -558,6 +534,173 @@ exports.getFormStats = async (req, res) => {
         byStatus: stats,
         byDepartment
       }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Upload images to form instance
+// @route   POST /api/form-instances/:id/images
+// @access  Private (Admin, Supervisor)
+exports.uploadFormImages = async (req, res) => {
+  try {
+    const formInstance = await FormInstance.findById(req.params.id);
+
+    if (!formInstance) {
+      // Delete uploaded files if form instance not found
+      if (req.files && req.files.length > 0) {
+        req.files.forEach(file => {
+          fs.unlink(file.path, (err) => {
+            if (err) console.error('Error deleting file:', err);
+          });
+        });
+      }
+      return res.status(404).json({
+        success: false,
+        message: 'Form instance not found'
+      });
+    }
+
+    // Check access rights
+    if (req.user.role === 'admin' && req.user.department !== 'management' && formInstance.department !== req.user.department) {
+      // Delete uploaded files if access denied
+      if (req.files && req.files.length > 0) {
+        req.files.forEach(file => {
+          fs.unlink(file.path, (err) => {
+            if (err) console.error('Error deleting file:', err);
+          });
+        });
+      }
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have access to this form'
+      });
+    }
+
+    if (req.user.role === 'supervisor') {
+      const user = await User.findById(formInstance.filledBy);
+      if (!req.user.departments.includes(user.department)) {
+        // Delete uploaded files if access denied
+        if (req.files && req.files.length > 0) {
+          req.files.forEach(file => {
+            fs.unlink(file.path, (err) => {
+              if (err) console.error('Error deleting file:', err);
+            });
+          });
+        }
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have access to this form'
+        });
+      }
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No images uploaded'
+      });
+    }
+
+    // Process uploaded files
+    const uploadedImages = req.files.map(file => ({
+      filename: file.originalname,
+      path: `/uploads/${file.filename}`,
+      mimetype: file.mimetype,
+      size: file.size,
+      uploadedAt: new Date()
+    }));
+
+    // Add images to form instance
+    if (!formInstance.images) {
+      formInstance.images = [];
+    }
+    formInstance.images.push(...uploadedImages);
+
+    await formInstance.save();
+
+    res.json({
+      success: true,
+      message: 'Images uploaded successfully',
+      data: uploadedImages
+    });
+  } catch (error) {
+    // Delete uploaded files on error
+    if (req.files && req.files.length > 0) {
+      req.files.forEach(file => {
+        fs.unlink(file.path, (err) => {
+          if (err) console.error('Error deleting file:', err);
+        });
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Delete image from form instance
+// @route   DELETE /api/form-instances/:id/images/:imageId
+// @access  Private (Admin, Supervisor)
+exports.deleteFormImage = async (req, res) => {
+  try {
+    const formInstance = await FormInstance.findById(req.params.id);
+
+    if (!formInstance) {
+      return res.status(404).json({
+        success: false,
+        message: 'Form instance not found'
+      });
+    }
+
+    // Check access rights
+    if (req.user.role === 'admin' && req.user.department !== 'management' && formInstance.department !== req.user.department) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have access to this form'
+      });
+    }
+
+    if (req.user.role === 'supervisor') {
+      const user = await User.findById(formInstance.filledBy);
+      if (!req.user.departments.includes(user.department)) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have access to this form'
+        });
+      }
+    }
+
+    const imageId = req.params.imageId;
+    const image = formInstance.images.id(imageId);
+
+    if (!image) {
+      return res.status(404).json({
+        success: false,
+        message: 'Image not found'
+      });
+    }
+
+    // Delete file from filesystem
+    const filePath = path.join(process.env.UPLOAD_DIR || './uploads', path.basename(image.path));
+    if (fs.existsSync(filePath)) {
+      fs.unlink(filePath, (err) => {
+        if (err) console.error('Error deleting file:', err);
+      });
+    }
+
+    // Remove image from form instance
+    formInstance.images.pull(imageId);
+    await formInstance.save();
+
+    res.json({
+      success: true,
+      message: 'Image deleted successfully'
     });
   } catch (error) {
     res.status(500).json({

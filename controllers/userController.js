@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const { createNotification } = require('../utils/notifications');
+const { sendEmailToUser, getEmployeeReportEmail } = require('../utils/emailService');
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -45,7 +46,7 @@ exports.getUsers = async (req, res) => {
 
 // @desc    Get single user
 // @route   GET /api/users/:id
-// @access  Private (Admin, Supervisor)
+// @access  Private (All authenticated users - employees can only access their own data)
 exports.getUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select('-password -refreshToken');
@@ -55,6 +56,16 @@ exports.getUser = async (req, res) => {
         success: false,
         message: 'User not found'
       });
+    }
+
+    // Employees can only access their own data
+    if (req.user.role === 'employee') {
+      if (req.user._id.toString() !== req.params.id && req.user.id !== req.params.id) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have access to this user'
+        });
+      }
     }
 
     // Supervisors can only see users in their departments
@@ -98,6 +109,17 @@ exports.createUser = async (req, res) => {
     // Handle image upload
     const imagePath = req.file ? `/uploads/${req.file.filename}` : undefined;
 
+    // Parse workSchedule if it's a JSON string
+    let parsedWorkSchedule = workSchedule || {};
+    if (typeof workSchedule === 'string' && workSchedule.trim()) {
+      try {
+        parsedWorkSchedule = JSON.parse(workSchedule);
+      } catch (e) {
+        // If parsing fails, use empty object
+        parsedWorkSchedule = {};
+      }
+    }
+
     const user = await User.create({
       name,
       email,
@@ -109,7 +131,7 @@ exports.createUser = async (req, res) => {
       languagePreference: languagePreference || 'en',
       leaveBalance: leaveBalance || 0,
       workDays: workDays || [],
-      workSchedule: workSchedule || {},
+      workSchedule: parsedWorkSchedule,
       nationality: nationality || undefined,
       idNumber: idNumber || undefined,
       jobTitle: jobTitle || undefined,
@@ -172,41 +194,60 @@ exports.updateUser = async (req, res) => {
       });
     }
 
+    // Prepare update object
+    const updateFields = {};
+    if (name) updateFields.name = name;
+    if (email) updateFields.email = email;
+    if (phone) updateFields.phone = phone;
+    if (role) updateFields.role = role;
+    if (department) updateFields.department = department;
+    if (departments) updateFields.departments = departments;
+    if (languagePreference) updateFields.languagePreference = languagePreference;
+    if (isActive !== undefined) updateFields.isActive = isActive;
+    if (leaveBalance !== undefined) updateFields.leaveBalance = leaveBalance;
+    if (workDays !== undefined) updateFields.workDays = workDays;
+    if (workSchedule !== undefined) {
+      // Parse workSchedule if it's a JSON string
+      try {
+        updateFields.workSchedule = typeof workSchedule === 'string' ? JSON.parse(workSchedule) : workSchedule;
+      } catch (e) {
+        updateFields.workSchedule = workSchedule;
+      }
+    }
+    if (nationality !== undefined) updateFields.nationality = nationality;
+    if (idNumber !== undefined) updateFields.idNumber = idNumber;
+    if (jobTitle !== undefined) updateFields.jobTitle = jobTitle;
+
     // Handle image upload
     if (req.file) {
-      // Delete old image if exists
-      if (user.image) {
+      // Store old image path for deletion (async, non-blocking)
+      const oldImagePath = user.image;
+      updateFields.image = `/uploads/${req.file.filename}`;
+
+      // Delete old image asynchronously (non-blocking)
+      if (oldImagePath) {
         const fs = require('fs');
         const path = require('path');
-        const oldImagePath = path.join(process.env.UPLOAD_DIR || './uploads', path.basename(user.image));
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
-        }
+        const fullOldImagePath = path.join(process.env.UPLOAD_DIR || './uploads', path.basename(oldImagePath));
+        // Delete in background, don't wait for it
+        fs.unlink(fullOldImagePath, (err) => {
+          if (err && err.code !== 'ENOENT') {
+            console.error('Error deleting old user image:', err);
+          }
+        });
       }
-      user.image = `/uploads/${req.file.filename}`;
     }
 
-    // Update fields
-    if (name) user.name = name;
-    if (email) user.email = email;
-    if (phone) user.phone = phone;
-    if (role) user.role = role;
-    if (department) user.department = department;
-    if (departments) user.departments = departments;
-    if (languagePreference) user.languagePreference = languagePreference;
-    if (isActive !== undefined) user.isActive = isActive;
-    if (leaveBalance !== undefined) user.leaveBalance = leaveBalance;
-    if (workDays !== undefined) user.workDays = workDays;
-    if (workSchedule !== undefined) user.workSchedule = workSchedule;
-    if (nationality !== undefined) user.nationality = nationality;
-    if (idNumber !== undefined) user.idNumber = idNumber;
-    if (jobTitle !== undefined) user.jobTitle = jobTitle;
-
-    await user.save();
+    // Use findByIdAndUpdate for better performance
+    const updatedUser = await User.findByIdAndUpdate(
+      req.params.id,
+      { $set: updateFields },
+      { new: true, runValidators: true }
+    ).select('-password -refreshToken');
 
     res.json({
       success: true,
-      data: user
+      data: updatedUser
     });
   } catch (error) {
     res.status(500).json({
@@ -346,6 +387,111 @@ exports.getAdminUser = async (req, res) => {
       data: admin
     });
   } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Send employee report via email
+// @route   POST /api/users/:id/send-report
+// @access  Private (Admin only)
+exports.sendEmployeeReport = async (req, res) => {
+  try {
+    const { month, year } = req.body;
+    const employee = await User.findById(req.params.id);
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    if (!employee.email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee email not found'
+      });
+    }
+
+    // Get month name
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const monthNamesAr = [
+      'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+      'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+    ];
+
+    const selectedMonth = month !== undefined ? parseInt(month) : new Date().getMonth();
+    const selectedYear = year || new Date().getFullYear();
+    const monthName = monthNames[selectedMonth];
+    const monthNameAr = monthNamesAr[selectedMonth];
+
+    // Get frontend URL
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const reportUrl = `${frontendUrl}/users/${employee._id}/report?month=${selectedMonth}&year=${selectedYear}`;
+
+    // Get department name
+    const departmentNames = {
+      kitchen: { en: 'Kitchen', ar: 'المطبخ' },
+      counter: { en: 'Counter', ar: 'الكاونتر' },
+      cleaning: { en: 'Cleaning', ar: 'النظافة' },
+      management: { en: 'Management', ar: 'الإدارة' },
+      delivery: { en: 'Delivery', ar: 'التوصيل' },
+      other: { en: 'Other', ar: 'أخرى' }
+    };
+
+    const department = departmentNames[employee.department] || { en: employee.department, ar: employee.department };
+
+    // Send email
+    const language = employee.languagePreference || 'ar';
+    const emailData = getEmployeeReportEmail({
+      employeeName: employee.name,
+      month: language === 'ar' ? monthNameAr : monthName,
+      year: selectedYear,
+      department: language === 'ar' ? department.ar : department.en,
+      reportUrl: reportUrl
+    }, language);
+
+    // Update email content to include report link button before the last paragraph
+    const emailContent = emailData.html.replace(
+      /<p style="text-align: [^"]+; font-size: 12px; color: #6b7280;">[^<]+<\/p>/,
+      `<div style="text-align: center; margin: 30px 0;">
+        <a href="${reportUrl}" style="display: inline-block; padding: 12px 25px; background-color: #dc2328; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold;">${language === 'ar' ? 'عرض التقرير' : 'View Report'}</a>
+      </div>
+      <p style="text-align: ${language === 'ar' ? 'right' : 'left'}; font-size: 12px; color: #6b7280;">${language === 'ar' ? 'فريق إدارة Brosted-4U' : 'Brosted-4U Management Team'}</p>`
+    );
+
+    const result = await sendEmailToUser(
+      employee.email,
+      () => ({
+        subject: emailData.subject,
+        html: emailContent
+      }),
+      language
+    );
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Report sent successfully',
+        data: {
+          email: employee.email,
+          messageId: result.messageId
+        }
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: result.error || 'Failed to send report email'
+      });
+    }
+  } catch (error) {
+    console.error('Error sending employee report:', error);
     res.status(500).json({
       success: false,
       message: error.message

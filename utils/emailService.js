@@ -503,6 +503,27 @@ const getPasswordResetByAdminEmail = (resetData, language = 'en') => {
   };
 };
 
+// Employee report email
+const getEmployeeReportEmail = (data, language = 'en') => {
+  const isRTL = language === 'ar';
+  const title = isRTL ? 'تقرير الأداء الشهري' : 'Monthly Performance Report';
+  const content = `
+    <p style="text-align: ${isRTL ? 'right' : 'left'}; margin-bottom: 15px;">${isRTL ? `مرحباً ${data.employeeName},` : `Hello ${data.employeeName},`}</p>
+    <p style="text-align: ${isRTL ? 'right' : 'left'}; margin-bottom: 15px;">${isRTL ? 'نود إعلامك بأن تقرير الأداء الشهري الخاص بك جاهز. يرجى النقر على الرابط أدناه لعرض التقرير.' : 'We would like to inform you that your monthly performance report is ready. Please click the link below to view your report.'}</p>
+    <div class="info-box" style="background-color: #f9fafb; border-left: 4px solid #dc2328; padding: 15px; margin: 20px 0; border-radius: 4px;">
+      <p style="margin: 5px 0; font-size: 14px;"><strong style="color: #dc2328;">${isRTL ? 'الفترة:' : 'Period:'}</strong> ${data.month} ${data.year}</p>
+      <p style="margin: 5px 0; font-size: 14px;"><strong style="color: #dc2328;">${isRTL ? 'القسم:' : 'Department:'}</strong> ${data.department}</p>
+    </div>
+    <p style="text-align: ${isRTL ? 'right' : 'left'}; margin-bottom: 15px;">${isRTL ? 'يرجى الاطلاع على التقرير للحصول على تفاصيل كاملة عن حضورك وإجازاتك وأدائك خلال هذا الشهر.' : 'Please review the report for complete details about your attendance, leaves, and performance during this month.'}</p>
+    <p style="text-align: ${isRTL ? 'right' : 'left'}; margin-bottom: 15px;">${isRTL ? 'إذا كان لديك أي استفسارات، يرجى التواصل معنا.' : 'If you have any questions, please feel free to contact us.'}</p>
+    <p style="text-align: ${isRTL ? 'right' : 'left'}; font-size: 12px; color: #6b7280;">${isRTL ? 'فريق إدارة Brosted-4U' : 'Brosted-4U Management Team'}</p>
+  `;
+  return {
+    subject: title,
+    html: getEmailTemplate(title, content, language)
+  };
+};
+
 module.exports = {
   sendEmail,
   sendEmailToAdmins,
@@ -515,6 +536,7 @@ module.exports = {
   getLeaveRejectedEmail,
   getPasswordResetEmail,
   getPasswordResetRequestEmail,
-  getPasswordResetByAdminEmail
+  getPasswordResetByAdminEmail,
+  getEmployeeReportEmail
 };
 

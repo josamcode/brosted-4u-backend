@@ -269,18 +269,18 @@ exports.recordAttendance = async (req, res) => {
       if (user && user.workDays && user.workDays.length > 0) {
         const today = new Date();
         const dayName = today.toLocaleDateString('en-US', { weekday: 'lowercase' });
-        
+
         if (user.workDays.includes(dayName) && user.workSchedule && user.workSchedule[dayName]) {
           const expectedStartTime = user.workSchedule[dayName].startTime;
           if (expectedStartTime) {
             const [expectedHours, expectedMinutes] = expectedStartTime.split(':').map(Number);
             const expectedTime = new Date(today);
             expectedTime.setHours(expectedHours, expectedMinutes, 0, 0);
-            
+
             const checkinTime = new Date(attendanceLog.timestamp);
             if (checkinTime > expectedTime) {
               const lateMinutes = Math.floor((checkinTime - expectedTime) / (1000 * 60));
-              
+
               await createNotification({
                 type: 'user_late',
                 title: {
@@ -452,7 +452,7 @@ exports.getAttendanceStats = async (req, res) => {
   }
 };
 
-// Get all attendance logs (admin/supervisor)
+// Get all attendance logs (admin/supervisor/employee - employees can only see their own)
 exports.getAllAttendance = async (req, res) => {
   try {
     const { startDate, endDate, userId, type, limit = 100, page = 1 } = req.query;
@@ -465,7 +465,13 @@ exports.getAllAttendance = async (req, res) => {
       if (endDate) query.timestamp.$lte = new Date(endDate);
     }
 
-    if (userId) query.userId = userId;
+    // Employees can only access their own attendance
+    if (req.user.role === 'employee') {
+      query.userId = req.user.id;
+    } else if (userId) {
+      query.userId = userId;
+    }
+
     if (type) query.type = type;
 
     // Check department access for supervisors
@@ -533,8 +539,19 @@ exports.getAllAttendanceGrouped = async (req, res) => {
       query.timestamp = { $gte: thirtyDaysAgo };
     }
 
-    // Check department access for supervisors
-    if (req.user.role === 'supervisor') {
+    // Employees can only access their own attendance
+    if (req.user.role === 'employee') {
+      // If userId is provided and it's not the employee's own ID, deny access
+      if (userId && userId !== req.user.id && userId !== req.user._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied'
+        });
+      }
+      // Force userId to be the employee's own ID
+      query.userId = req.user.id;
+    } else if (req.user.role === 'supervisor') {
+      // Check department access for supervisors
       const User = require('../models/User');
       const departmentUsers = await User.find({
         department: { $in: req.user.departments || [] }

@@ -32,9 +32,11 @@ router.post('/record', recordAttendance);
 // Get my attendance
 router.get('/my-attendance', getMyAttendance);
 
-// Admin and Supervisor - stats and all logs
+// Admin and Supervisor - stats
 router.get('/stats', authorize('admin', 'supervisor'), getAttendanceStats);
-router.get('/logs', authorize('admin', 'supervisor'), getAllAttendance);
-router.get('/logs/grouped', authorize('admin', 'supervisor'), getAllAttendanceGrouped);
+
+// All authenticated users - logs (employees can only see their own)
+router.get('/logs', getAllAttendance);
+router.get('/logs/grouped', getAllAttendanceGrouped);
 
 module.exports = router;

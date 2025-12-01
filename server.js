@@ -14,17 +14,40 @@ connectDB();
 
 const app = express();
 
-// Body parser
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Body parser with increased limits for large form data (e.g., workSchedule)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Serve static files from uploads directory
+// Serve static files from uploads directory with CORS headers
 const path = require('path');
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', (req, res, next) => {
+  // Handle preflight OPTIONS requests
+  if (req.method === 'OPTIONS') {
+    const origin = req.headers.origin;
+    if (allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    }
+    return res.status(200).end();
+  }
+
+  // Add CORS headers for image requests
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  }
+  next();
+}, express.static(path.join(__dirname, 'uploads')));
 
 // Enable CORS
 const allowedOrigins = [
   'http://localhost:3000',
+  "https://brosted-4u-frontend.vercel.app",
   "https://brosted4u.com",
   "https://www.brosted4u.com"
 ];

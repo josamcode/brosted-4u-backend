@@ -37,7 +37,8 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 5242880 // 5MB default
+    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 5242880, // 5MB default
+    fieldSize: 10 * 1024 * 1024 // 10MB for field values (e.g., workSchedule JSON)
   },
   fileFilter: fileFilter
 });

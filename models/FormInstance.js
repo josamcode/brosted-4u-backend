@@ -51,6 +51,17 @@ const formInstanceSchema = new mongoose.Schema({
     mimetype: String,
     size: Number,
     uploadedAt: Date
+  }],
+  // Form images (uploaded by admin when viewing/filling the form)
+  images: [{
+    filename: String,
+    path: String,
+    mimetype: String,
+    size: Number,
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    }
   }]
 }, {
   timestamps: true
