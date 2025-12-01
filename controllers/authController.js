@@ -10,8 +10,8 @@ exports.register = async (req, res) => {
   try {
     const { name, email, password, phone, role, department, departments, languagePreference } = req.body;
 
-    // Check if user exists
-    const existingUser = await User.findOne({ email });
+    // Check if user exists (optimized - only check email)
+    const existingUser = await User.findOne({ email }).select('_id email').lean();
     if (existingUser) {
       return res.status(400).json({
         success: false,

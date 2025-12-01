@@ -12,8 +12,10 @@ const checkAbsentUsers = async () => {
     const todayStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 0, 0, 0, 0));
     const todayEnd = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 23, 59, 59, 999));
 
-    // Get all active users
-    const activeUsers = await User.find({ isActive: true }).select('_id name email department workDays workSchedule');
+    // Get all active users (optimized - only select necessary fields)
+    const activeUsers = await User.find({ isActive: true })
+      .select('_id name email department workDays workSchedule')
+      .lean(); // Use lean() for read-only queries
 
     // Get all check-ins for today
     const todayCheckins = await AttendanceLog.find({

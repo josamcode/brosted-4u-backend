@@ -1,13 +1,15 @@
 const User = require('../models/User');
+const UserMetadata = require('../models/UserMetadata');
 const { createNotification } = require('../utils/notifications');
 const { sendEmailToUser, getEmployeeReportEmail } = require('../utils/emailService');
+const { getUsers, getUserById, getUserCount, searchUsers, PROJECTIONS } = require('../utils/userQueries');
 
 // @desc    Get all users
 // @route   GET /api/users
 // @access  Private (Admin, Supervisor)
 exports.getUsers = async (req, res) => {
   try {
-    const { role, department, isActive, search } = req.query;
+    const { role, department, isActive, search, page = 1, limit = 50, sort = 'name' } = req.query;
 
     let query = {};
 
@@ -16,25 +18,63 @@ exports.getUsers = async (req, res) => {
     if (department) query.department = department;
     if (isActive !== undefined) query.isActive = isActive === 'true';
 
-    // Search by name or email
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } }
-      ];
-    }
-
     // Supervisors can only see users in their departments
     if (req.user.role === 'supervisor') {
       query.department = { $in: req.user.departments };
     }
 
-    const users = await User.find(query).select('-password -refreshToken');
+    // Handle search
+    if (search) {
+      const searchResults = await searchUsers(search, query, 'LIST', parseInt(limit));
+      const total = await getUserCount({
+        ...query,
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } }
+        ]
+      });
+
+      return res.json({
+        success: true,
+        count: searchResults.length,
+        total,
+        data: searchResults,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          pages: Math.ceil(total / parseInt(limit))
+        }
+      });
+    }
+
+    // Parse sort parameter
+    const sortObj = {};
+    if (sort.startsWith('-')) {
+      sortObj[sort.substring(1)] = -1;
+    } else {
+      sortObj[sort] = 1;
+    }
+
+    // Use optimized query with pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const users = await getUsers(query, 'LIST', {
+      sort: sortObj,
+      limit: parseInt(limit),
+      skip
+    });
+
+    const total = await getUserCount(query);
 
     res.json({
       success: true,
       count: users.length,
-      data: users
+      total,
+      data: users,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / parseInt(limit))
+      }
     });
   } catch (error) {
     res.status(500).json({
@@ -49,7 +89,8 @@ exports.getUsers = async (req, res) => {
 // @access  Private (All authenticated users - employees can only access their own data)
 exports.getUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('-password -refreshToken');
+    // Use optimized query - get only necessary fields
+    const user = await getUserById(req.params.id, 'FULL');
 
     if (!user) {
       return res.status(404).json({
@@ -78,9 +119,19 @@ exports.getUser = async (req, res) => {
       }
     }
 
+    // Optionally include metadata if requested
+    const includeMetadata = req.query.includeMetadata === 'true';
+    let responseData = { user: user.toObject() };
+
+    if (includeMetadata) {
+      const metadata = await UserMetadata.findOne({ userId: user._id }).lean();
+      responseData.metadata = metadata || null;
+    }
+
     res.json({
       success: true,
-      data: user
+      data: responseData.user,
+      ...(includeMetadata && { metadata: responseData.metadata })
     });
   } catch (error) {
     res.status(500).json({
@@ -109,13 +160,37 @@ exports.createUser = async (req, res) => {
     // Handle image upload
     const imagePath = req.file ? `/uploads/${req.file.filename}` : undefined;
 
-    // Parse workSchedule if it's a JSON string
-    let parsedWorkSchedule = workSchedule || {};
-    if (typeof workSchedule === 'string' && workSchedule.trim()) {
+    // Normalize workSchedule to ensure it's always a proper object
+    // Prevent storing as array, string, or other invalid types
+    let parsedWorkSchedule = {};
+    if (workSchedule !== undefined && workSchedule !== null) {
       try {
-        parsedWorkSchedule = JSON.parse(workSchedule);
+        if (typeof workSchedule === 'string' && workSchedule.trim()) {
+          // If it's a JSON string, parse it
+          parsedWorkSchedule = JSON.parse(workSchedule);
+        } else if (Array.isArray(workSchedule)) {
+          // If it's an array (corrupted data), ignore it and use empty object
+          console.warn(`⚠️  Invalid workSchedule format (array) when creating user, using empty object`);
+          parsedWorkSchedule = {};
+        } else if (typeof workSchedule === 'object') {
+          // Valid object - use as is
+          parsedWorkSchedule = workSchedule;
+        }
+
+        // Ensure it's a plain object (not Map, etc.)
+        if (parsedWorkSchedule instanceof Map) {
+          parsedWorkSchedule = Object.fromEntries(parsedWorkSchedule);
+        }
+
+        // Validate size - if too large, warn and truncate
+        const scheduleSize = JSON.stringify(parsedWorkSchedule).length;
+        if (scheduleSize > 10000) { // 10KB limit
+          console.warn(`⚠️  workSchedule too large (${scheduleSize} bytes) when creating user, truncating`);
+          parsedWorkSchedule = {};
+        }
       } catch (e) {
         // If parsing fails, use empty object
+        console.warn(`⚠️  Error parsing workSchedule when creating user: ${e.message}, using empty object`);
         parsedWorkSchedule = {};
       }
     }
@@ -207,11 +282,43 @@ exports.updateUser = async (req, res) => {
     if (leaveBalance !== undefined) updateFields.leaveBalance = leaveBalance;
     if (workDays !== undefined) updateFields.workDays = workDays;
     if (workSchedule !== undefined) {
-      // Parse workSchedule if it's a JSON string
+      // Normalize workSchedule to ensure it's always a proper object
+      // Prevent storing as array, string, or other invalid types
       try {
-        updateFields.workSchedule = typeof workSchedule === 'string' ? JSON.parse(workSchedule) : workSchedule;
+        let normalizedSchedule = {};
+
+        if (typeof workSchedule === 'string' && workSchedule.trim()) {
+          // If it's a JSON string, parse it
+          normalizedSchedule = JSON.parse(workSchedule);
+        } else if (Array.isArray(workSchedule)) {
+          // If it's an array (corrupted data), ignore it and use empty object
+          console.warn(`⚠️  Invalid workSchedule format (array) for user ${req.params.id}, using empty object`);
+          normalizedSchedule = {};
+        } else if (typeof workSchedule === 'object' && workSchedule !== null) {
+          // Valid object - use as is
+          normalizedSchedule = workSchedule;
+        } else {
+          // Invalid type - use empty object
+          normalizedSchedule = {};
+        }
+
+        // Ensure it's a plain object (not Map, etc.)
+        if (normalizedSchedule instanceof Map) {
+          normalizedSchedule = Object.fromEntries(normalizedSchedule);
+        }
+
+        // Validate size - if too large, warn and truncate
+        const scheduleSize = JSON.stringify(normalizedSchedule).length;
+        if (scheduleSize > 10000) { // 10KB limit
+          console.warn(`⚠️  workSchedule too large (${scheduleSize} bytes) for user ${req.params.id}, truncating`);
+          normalizedSchedule = {};
+        }
+
+        updateFields.workSchedule = normalizedSchedule;
       } catch (e) {
-        updateFields.workSchedule = workSchedule;
+        // If parsing fails, use empty object
+        console.warn(`⚠️  Error parsing workSchedule for user ${req.params.id}: ${e.message}, using empty object`);
+        updateFields.workSchedule = {};
       }
     }
     if (nationality !== undefined) updateFields.nationality = nationality;
@@ -350,9 +457,13 @@ exports.resetPassword = async (req, res) => {
 // @access  Private (Admin only)
 exports.getPasswordResetRequests = async (req, res) => {
   try {
+    // Optimized query - only select necessary fields
     const users = await User.find({
       passwordResetRequested: true
-    }).select('name email department passwordResetRequestDate _id').sort('-passwordResetRequestDate');
+    })
+      .select('name email department passwordResetRequestDate _id')
+      .sort('-passwordResetRequestDate')
+      .lean(); // Use lean() for read-only queries
 
     res.json({
       success: true,
@@ -372,8 +483,10 @@ exports.getPasswordResetRequests = async (req, res) => {
 // @access  Private (All authenticated users)
 exports.getAdminUser = async (req, res) => {
   try {
+    // Optimized query - only select necessary fields
     const admin = await User.findOne({ role: 'admin', isActive: true })
-      .select('_id name email department role');
+      .select('_id name email department role')
+      .lean(); // Use lean() for read-only queries
 
     if (!admin) {
       return res.status(404).json({
