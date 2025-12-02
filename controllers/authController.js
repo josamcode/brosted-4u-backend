@@ -108,9 +108,11 @@ exports.login = async (req, res) => {
     const accessToken = generateAccessToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    // Save refresh token
-    user.refreshToken = refreshToken;
-    await user.save();
+    // Save refresh token (use updateOne to avoid full document validation)
+    await User.updateOne(
+      { _id: user._id },
+      { refreshToken }
+    );
 
     res.json({
       success: true,

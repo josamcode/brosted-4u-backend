@@ -20,9 +20,9 @@ router.get('/validate/:token', validateQRToken);
 // Protected routes - require authentication
 router.use(protect);
 
-// Admin only - QR code management
-router.post('/qr/generate', authorize('admin'), generateQRCode);
-router.get('/qr/current', authorize('admin'), getCurrentQR);
+// Admin and QR Manager - QR code management
+router.post('/qr/generate', authorize('admin', 'qr-manager'), generateQRCode);
+router.get('/qr/current', authorize('admin', 'qr-manager'), getCurrentQR);
 router.post('/qr/cleanup', authorize('admin'), cleanupExpiredQRs);
 router.post('/check-absent', authorize('admin'), checkAbsentUsers);
 
