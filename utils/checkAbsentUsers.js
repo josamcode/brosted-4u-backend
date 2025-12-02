@@ -34,7 +34,7 @@ const checkAbsentUsers = async () => {
         continue; // Skip users without work days
       }
 
-      const dayName = today.toLocaleDateString('en-US', { weekday: 'lowercase' });
+      const dayName = today.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
 
       // Check if today is a work day for this user
       if (!user.workDays.includes(dayName)) {

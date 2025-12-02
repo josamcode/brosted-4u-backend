@@ -13,9 +13,13 @@ exports.generateQRCode = async (req, res) => {
     // Generate unique token
     const token = AttendanceToken.generateToken();
 
-    // Set validity: 1 minute from now
+    // Set validity from environment variable (default: 30 seconds)
+    const validitySeconds = parseInt(process.env.QR_TOKEN_VALIDITY_SECONDS) || 30;
+    const validityMs = validitySeconds * 1000;
     const validFrom = new Date();
-    const validTo = new Date(validFrom.getTime() + 60 * 1000); // 1 minute
+    const validTo = new Date(validFrom.getTime() + validityMs);
+
+    console.log(`🔑 Generating QR with validity: ${validitySeconds} seconds (validFrom: ${validFrom.toISOString()}, validTo: ${validTo.toISOString()})`);
 
     // Create new QR token
     const qrToken = await AttendanceToken.create({
@@ -58,7 +62,7 @@ exports.generateQRCode = async (req, res) => {
         validTo: qrToken.validTo,
         sequenceNumber: qrToken.sequenceNumber,
         usageCount: qrToken.usageCount || 0,
-        expiresIn: 60 // seconds
+        expiresIn: validitySeconds // seconds
       }
     });
   } catch (error) {
@@ -268,7 +272,7 @@ exports.recordAttendance = async (req, res) => {
       const user = await User.findById(req.user.id).select('workDays workSchedule');
       if (user && user.workDays && user.workDays.length > 0) {
         const today = new Date();
-        const dayName = today.toLocaleDateString('en-US', { weekday: 'lowercase' });
+        const dayName = today.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
 
         if (user.workDays.includes(dayName) && user.workSchedule && user.workSchedule[dayName]) {
           const expectedStartTime = user.workSchedule[dayName].startTime;

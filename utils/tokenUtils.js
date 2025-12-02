@@ -28,22 +28,22 @@ exports.verifyRefreshToken = (token) => {
 // Generate QR attendance token
 exports.generateQRToken = () => {
   const now = new Date();
-  const validityMinutes = parseInt(process.env.QR_TOKEN_VALIDITY_MINUTES) || 1;
-  
+  const validitySeconds = parseInt(process.env.QR_TOKEN_VALIDITY_SECONDS) || 30;
+
   const payload = {
     timestamp: now.getTime(),
     random: crypto.randomBytes(16).toString('hex')
   };
-  
+
   const token = CryptoJS.AES.encrypt(
-    JSON.stringify(payload), 
+    JSON.stringify(payload),
     process.env.QR_TOKEN_SECRET
   ).toString();
-  
+
   return {
     token,
     validFrom: now,
-    validTo: new Date(now.getTime() + validityMinutes * 60000)
+    validTo: new Date(now.getTime() + validitySeconds * 1000)
   };
 };
 
@@ -53,13 +53,13 @@ exports.verifyQRToken = (token) => {
     const bytes = CryptoJS.AES.decrypt(token, process.env.QR_TOKEN_SECRET);
     const decrypted = bytes.toString(CryptoJS.enc.Utf8);
     const payload = JSON.parse(decrypted);
-    
+
     const now = Date.now();
-    const validityMinutes = parseInt(process.env.QR_TOKEN_VALIDITY_MINUTES) || 1;
+    const validitySeconds = parseInt(process.env.QR_TOKEN_VALIDITY_SECONDS) || 30;
     const tokenAge = now - payload.timestamp;
-    
-    // Token is valid if it's less than validity minutes old
-    return tokenAge <= (validityMinutes * 60000);
+
+    // Token is valid if it's less than validity seconds old
+    return tokenAge <= (validitySeconds * 1000);
   } catch (error) {
     return false;
   }

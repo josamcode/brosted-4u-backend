@@ -274,6 +274,15 @@ const getLeaveRequestedEmail = (leaveData, language = 'en') => {
   const endDate = new Date(leaveData.endDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US');
   const department = leaveData.department || 'N/A';
 
+  // Calculate duration in hours if less than 1 day
+  let durationText = '';
+  if (days < 1 && days > 0) {
+    const hours = Math.round(days * 24);
+    durationText = `${hours} ${isRTL ? 'ساعة' : 'hour(s)'}`;
+  } else {
+    durationText = `${days} ${isRTL ? 'يوم' : 'day(s)'}`;
+  }
+
   const content = `
     <h2>${title}</h2>
     <p>${isRTL ? `تم تقديم طلب إجازة جديد من ${userName}` : `A new leave request has been submitted by ${userName}`}</p>
@@ -283,7 +292,7 @@ const getLeaveRequestedEmail = (leaveData, language = 'en') => {
       <p><strong>${isRTL ? 'نوع الإجازة:' : 'Leave Type:'}</strong> ${leaveType}</p>
       <p><strong>${isRTL ? 'من:' : 'From:'}</strong> ${startDate}</p>
       <p><strong>${isRTL ? 'إلى:' : 'To:'}</strong> ${endDate}</p>
-      <p><strong>${isRTL ? 'المدة:' : 'Duration:'}</strong> ${days} ${isRTL ? 'يوم' : 'day(s)'}</p>
+      <p><strong>${isRTL ? 'المدة:' : 'Duration:'}</strong> ${durationText}</p>
     </div>
     <p>${isRTL ? 'يرجى مراجعة طلب الإجازة والموافقة عليه أو رفضه.' : 'Please review and approve or reject the leave request.'}</p>
   `;
@@ -304,6 +313,15 @@ const getLeaveApprovedEmail = (leaveData, language = 'en') => {
   const endDate = new Date(leaveData.endDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US');
   const approvedBy = leaveData.approvedBy?.name || 'Admin';
 
+  // Calculate duration in hours if less than 1 day
+  let durationText = '';
+  if (days < 1 && days > 0) {
+    const hours = Math.round(days * 24);
+    durationText = `${hours} ${isRTL ? 'ساعة' : 'hour(s)'}`;
+  } else {
+    durationText = `${days} ${isRTL ? 'يوم' : 'day(s)'}`;
+  }
+
   const content = `
     <h2>${title}</h2>
     <p>${isRTL ? 'تمت الموافقة على طلب الإجازة الخاص بك' : 'Your leave request has been approved'}</p>
@@ -311,7 +329,7 @@ const getLeaveApprovedEmail = (leaveData, language = 'en') => {
       <p><strong>${isRTL ? 'نوع الإجازة:' : 'Leave Type:'}</strong> ${leaveType}</p>
       <p><strong>${isRTL ? 'من:' : 'From:'}</strong> ${startDate}</p>
       <p><strong>${isRTL ? 'إلى:' : 'To:'}</strong> ${endDate}</p>
-      <p><strong>${isRTL ? 'المدة:' : 'Duration:'}</strong> ${days} ${isRTL ? 'يوم' : 'day(s)'}</p>
+      <p><strong>${isRTL ? 'المدة:' : 'Duration:'}</strong> ${durationText}</p>
       <p><strong>${isRTL ? 'تمت الموافقة بواسطة:' : 'Approved By:'}</strong> ${approvedBy}</p>
     </div>
     <p>${isRTL ? 'نتمنى لك إجازة سعيدة!' : 'Have a great leave!'}</p>
@@ -334,6 +352,15 @@ const getLeaveRejectedEmail = (leaveData, language = 'en') => {
   const rejectedBy = leaveData.rejectedBy?.name || 'Admin';
   const notes = leaveData.rejectionNotes || '';
 
+  // Calculate duration in hours if less than 1 day
+  let durationText = '';
+  if (days < 1 && days > 0) {
+    const hours = Math.round(days * 24);
+    durationText = `${hours} ${isRTL ? 'ساعة' : 'hour(s)'}`;
+  } else {
+    durationText = `${days} ${isRTL ? 'يوم' : 'day(s)'}`;
+  }
+
   const content = `
     <h2>${title}</h2>
     <p>${isRTL ? 'تم رفض طلب الإجازة الخاص بك' : 'Your leave request has been rejected'}</p>
@@ -341,7 +368,7 @@ const getLeaveRejectedEmail = (leaveData, language = 'en') => {
       <p><strong>${isRTL ? 'نوع الإجازة:' : 'Leave Type:'}</strong> ${leaveType}</p>
       <p><strong>${isRTL ? 'من:' : 'From:'}</strong> ${startDate}</p>
       <p><strong>${isRTL ? 'إلى:' : 'To:'}</strong> ${endDate}</p>
-      <p><strong>${isRTL ? 'المدة:' : 'Duration:'}</strong> ${days} ${isRTL ? 'يوم' : 'day(s)'}</p>
+      <p><strong>${isRTL ? 'المدة:' : 'Duration:'}</strong> ${durationText}</p>
       <p><strong>${isRTL ? 'تم الرفض بواسطة:' : 'Rejected By:'}</strong> ${rejectedBy}</p>
       ${notes ? `<p><strong>${isRTL ? 'ملاحظات:' : 'Notes:'}</strong> ${notes}</p>` : ''}
     </div>
