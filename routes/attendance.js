@@ -10,7 +10,8 @@ const {
   getAllAttendance,
   getAllAttendanceGrouped,
   cleanupExpiredQRs,
-  checkAbsentUsers
+  checkAbsentUsers,
+  updateAttendanceLog
 } = require('../controllers/attendanceController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -38,5 +39,8 @@ router.get('/stats', authorize('admin', 'supervisor'), getAttendanceStats);
 // All authenticated users - logs (employees can only see their own)
 router.get('/logs', getAllAttendance);
 router.get('/logs/grouped', getAllAttendanceGrouped);
+
+// Admin only - update attendance log
+router.put('/logs/:id', authorize('admin'), updateAttendanceLog);
 
 module.exports = router;

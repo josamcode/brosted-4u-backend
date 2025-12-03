@@ -712,3 +712,49 @@ exports.cleanupExpiredQRs = async (req, res) => {
     });
   }
 };
+
+// Update attendance log timestamp (Admin only)
+exports.updateAttendanceLog = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { timestamp, notes } = req.body;
+
+    const log = await AttendanceLog.findById(id);
+
+    if (!log) {
+      return res.status(404).json({
+        success: false,
+        message: 'Attendance log not found'
+      });
+    }
+
+    // Update timestamp if provided
+    if (timestamp) {
+      log.timestamp = new Date(timestamp);
+    }
+
+    // Update notes if provided
+    if (notes !== undefined) {
+      log.notes = notes;
+    }
+
+    // Mark as manually edited
+    log.method = 'manual';
+
+    await log.save();
+    await log.populate('userId', 'name email department');
+    await log.populate('tokenId', 'sequenceNumber');
+
+    res.json({
+      success: true,
+      message: 'Attendance log updated successfully',
+      data: log
+    });
+  } catch (error) {
+    console.error('Error updating attendance log:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};

@@ -240,16 +240,19 @@ exports.updateLeaveRequest = async (req, res) => {
       });
     }
 
-    // Only owner can update
-    if (leave.userId.toString() !== req.user.id) {
+    // Admin can update any leave request, others can only update their own
+    const isAdmin = req.user.role === 'admin';
+    const isOwner = leave.userId.toString() === req.user.id;
+
+    if (!isAdmin && !isOwner) {
       return res.status(403).json({
         success: false,
         message: 'You do not have permission to update this leave request'
       });
     }
 
-    // Can only update pending requests
-    if (leave.status !== 'pending') {
+    // Non-admin users can only update pending requests
+    if (!isAdmin && leave.status !== 'pending') {
       return res.status(400).json({
         success: false,
         message: 'Cannot update a leave request that has been processed'
@@ -267,7 +270,15 @@ exports.updateLeaveRequest = async (req, res) => {
       const start = leave.startDate;
       const end = leave.endDate;
       const diffTime = Math.abs(end - start);
-      leave.days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+      // For permission type, calculate days based on hours (8 hours = 1 day)
+      if (leave.type === 'permission') {
+        const hours = diffTime / (1000 * 60 * 60);
+        leave.days = hours / 8; // Convert hours to days
+      } else {
+        // For other types, calculate full days
+        leave.days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      }
     } else if (days) {
       leave.days = days;
     }
