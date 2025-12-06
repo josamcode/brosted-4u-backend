@@ -3,6 +3,7 @@ const UserMetadata = require('../models/UserMetadata');
 const { createNotification } = require('../utils/notifications');
 const { sendEmailToUser, getEmployeeReportEmail } = require('../utils/emailService');
 const { getUsers, getUserById, getUserCount, searchUsers, PROJECTIONS } = require('../utils/userQueries');
+const logger = require('../utils/logger');
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -170,7 +171,7 @@ exports.createUser = async (req, res) => {
           parsedWorkSchedule = JSON.parse(workSchedule);
         } else if (Array.isArray(workSchedule)) {
           // If it's an array (corrupted data), ignore it and use empty object
-          console.warn(`⚠️  Invalid workSchedule format (array) when creating user, using empty object`);
+          logger.warn(`⚠️  Invalid workSchedule format (array) when creating user, using empty object`);
           parsedWorkSchedule = {};
         } else if (typeof workSchedule === 'object') {
           // Valid object - use as is
@@ -185,12 +186,12 @@ exports.createUser = async (req, res) => {
         // Validate size - if too large, warn and truncate
         const scheduleSize = JSON.stringify(parsedWorkSchedule).length;
         if (scheduleSize > 10000) { // 10KB limit
-          console.warn(`⚠️  workSchedule too large (${scheduleSize} bytes) when creating user, truncating`);
+          logger.warn(`⚠️  workSchedule too large (${scheduleSize} bytes) when creating user, truncating`);
           parsedWorkSchedule = {};
         }
       } catch (e) {
         // If parsing fails, use empty object
-        console.warn(`⚠️  Error parsing workSchedule when creating user: ${e.message}, using empty object`);
+        logger.warn(`⚠️  Error parsing workSchedule when creating user: ${e.message}, using empty object`);
         parsedWorkSchedule = {};
       }
     }
@@ -292,7 +293,7 @@ exports.updateUser = async (req, res) => {
           normalizedSchedule = JSON.parse(workSchedule);
         } else if (Array.isArray(workSchedule)) {
           // If it's an array (corrupted data), ignore it and use empty object
-          console.warn(`⚠️  Invalid workSchedule format (array) for user ${req.params.id}, using empty object`);
+          logger.warn(`⚠️  Invalid workSchedule format (array) for user ${req.params.id}, using empty object`);
           normalizedSchedule = {};
         } else if (typeof workSchedule === 'object' && workSchedule !== null) {
           // Valid object - use as is
@@ -310,14 +311,14 @@ exports.updateUser = async (req, res) => {
         // Validate size - if too large, warn and truncate
         const scheduleSize = JSON.stringify(normalizedSchedule).length;
         if (scheduleSize > 10000) { // 10KB limit
-          console.warn(`⚠️  workSchedule too large (${scheduleSize} bytes) for user ${req.params.id}, truncating`);
+          logger.warn(`⚠️  workSchedule too large (${scheduleSize} bytes) for user ${req.params.id}, truncating`);
           normalizedSchedule = {};
         }
 
         updateFields.workSchedule = normalizedSchedule;
       } catch (e) {
         // If parsing fails, use empty object
-        console.warn(`⚠️  Error parsing workSchedule for user ${req.params.id}: ${e.message}, using empty object`);
+        logger.warn(`⚠️  Error parsing workSchedule for user ${req.params.id}: ${e.message}, using empty object`);
         updateFields.workSchedule = {};
       }
     }

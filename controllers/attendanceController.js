@@ -3,6 +3,8 @@ const AttendanceLog = require('../models/AttendanceLog');
 const User = require('../models/User');
 const { createNotification } = require('../utils/notifications');
 const { checkAbsentUsers } = require('../utils/checkAbsentUsers');
+const logger = require('../utils/logger');
+const dateUtils = require('../utils/dateUtils');
 
 // Auto-generate QR code (called by cron job or manually by admin)
 exports.generateQRCode = async (req, res) => {
@@ -19,7 +21,7 @@ exports.generateQRCode = async (req, res) => {
     const validFrom = new Date();
     const validTo = new Date(validFrom.getTime() + validityMs);
 
-    console.log(`🔑 Generating QR with validity: ${validitySeconds} seconds (validFrom: ${validFrom.toISOString()}, validTo: ${validTo.toISOString()})`);
+    logger.log(`🔑 Generating QR with validity: ${validitySeconds} seconds (validFrom: ${validFrom.toISOString()}, validTo: ${validTo.toISOString()})`);
 
     // Create new QR token
     const qrToken = await AttendanceToken.create({
@@ -52,7 +54,7 @@ exports.generateQRCode = async (req, res) => {
       _id: { $nin: idsToKeep }
     });
 
-    console.log(`✅ Generated QR #${sequenceNumber}, cleaned old tokens`);
+    logger.log(`✅ Generated QR #${sequenceNumber}, cleaned old tokens`);
 
     res.json({
       success: true,
@@ -66,7 +68,7 @@ exports.generateQRCode = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error generating QR code:', error);
+    logger.error('Error generating QR code:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -201,10 +203,9 @@ exports.recordAttendance = async (req, res) => {
       });
     }
 
-    // Check today's attendance status (using UTC to avoid timezone issues)
-    const now = new Date();
-    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
-    const todayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+    // Check today's attendance status (using Saudi Arabia timezone)
+    const todayStart = dateUtils.getStartOfToday();
+    const todayEnd = dateUtils.getEndOfToday();
 
     // Check if user already has attendance records for today
     const todayAttendance = await AttendanceLog.find({
@@ -229,17 +230,53 @@ exports.recordAttendance = async (req, res) => {
         });
       }
     } else if (type === 'checkout') {
-      if (!hasCheckInToday) {
+      // For check-out, check if there's an unclosed check-in (not just today, but any recent check-in without checkout)
+      // Get the most recent check-in that doesn't have a corresponding check-out
+      const recentCheckIns = await AttendanceLog.find({
+        userId: req.user.id,
+        type: 'checkin'
+      })
+        .sort({ timestamp: -1 })
+        .limit(1);
+
+      if (recentCheckIns.length === 0) {
         return res.status(400).json({
           success: false,
           message: 'You must check in before checking out'
         });
       }
+
+      const lastCheckIn = recentCheckIns[0];
+
+      // Check if there's already a check-out after this check-in
+      const hasCheckOutAfterCheckIn = await AttendanceLog.findOne({
+        userId: req.user.id,
+        type: 'checkout',
+        timestamp: { $gt: lastCheckIn.timestamp }
+      });
+
+      if (hasCheckOutAfterCheckIn) {
+        // There's already a check-out after the last check-in, so check if there's a check-in today
+        if (!hasCheckInToday) {
+          return res.status(400).json({
+            success: false,
+            message: 'You must check in before checking out'
+          });
+        }
+      }
+
+      // Check if already checked out today (only if checking out on the same day as check-in)
       if (hasCheckOutToday) {
-        return res.status(400).json({
-          success: false,
-          message: 'You have already checked out today'
-        });
+        // But allow check-out if the last check-in was on a different day
+        const lastCheckInDate = dateUtils.getDateString(lastCheckIn.timestamp);
+        const todayDate = dateUtils.getDateString(new Date());
+
+        if (lastCheckInDate === todayDate) {
+          return res.status(400).json({
+            success: false,
+            message: 'You have already checked out today'
+          });
+        }
       }
     }
 
@@ -271,15 +308,23 @@ exports.recordAttendance = async (req, res) => {
     if (type === 'checkin') {
       const user = await User.findById(req.user.id).select('workDays workSchedule');
       if (user && user.workDays && user.workDays.length > 0) {
-        const today = new Date();
-        const dayName = today.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+        // Get day name in Saudi timezone
+        const dayName = dateUtils.getDayName(new Date());
 
         if (user.workDays.includes(dayName) && user.workSchedule && user.workSchedule[dayName]) {
           const expectedStartTime = user.workSchedule[dayName].startTime;
           if (expectedStartTime) {
             const [expectedHours, expectedMinutes] = expectedStartTime.split(':').map(Number);
-            const expectedTime = new Date(today);
-            expectedTime.setHours(expectedHours, expectedMinutes, 0, 0);
+            // Create expected time in Saudi timezone
+            const todayComponents = dateUtils.getDateComponents(new Date());
+            const expectedTime = dateUtils.createDate(
+              todayComponents.year,
+              todayComponents.month,
+              todayComponents.day,
+              expectedHours,
+              expectedMinutes,
+              0
+            );
 
             const checkinTime = new Date(attendanceLog.timestamp);
             if (checkinTime > expectedTime) {
@@ -346,16 +391,16 @@ exports.getMyAttendance = async (req, res) => {
       .populate('tokenId', 'sequenceNumber')
       .populate('userId', 'name email department');
 
-    // Group logs by date (use UTC to avoid timezone issues)
-    const groupedByDate = {};
-    logs.forEach(log => {
-      // Use UTC date to avoid timezone shifts
-      const logDate = new Date(log.timestamp);
-      const year = logDate.getUTCFullYear();
-      const month = String(logDate.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(logDate.getUTCDate()).padStart(2, '0');
-      const date = `${year}-${month}-${day}`; // YYYY-MM-DD format
+    // Group logs by date (use Saudi Arabia timezone)
+    // First, collect all check-ins and check-outs
+    const checkIns = logs.filter(log => log.type === 'checkin').sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const checkOuts = logs.filter(log => log.type === 'checkout').sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
+    const groupedByDate = {};
+
+    // Process check-ins
+    checkIns.forEach(checkIn => {
+      const date = dateUtils.getDateString(checkIn.timestamp);
       if (!groupedByDate[date]) {
         groupedByDate[date] = {
           date,
@@ -363,16 +408,48 @@ exports.getMyAttendance = async (req, res) => {
           checkout: null
         };
       }
+      // Keep the earliest check-in of the day
+      if (!groupedByDate[date].checkin || new Date(checkIn.timestamp) < new Date(groupedByDate[date].checkin.timestamp)) {
+        groupedByDate[date].checkin = checkIn;
+      }
+    });
 
-      if (log.type === 'checkin') {
-        // Keep the earliest check-in of the day
-        if (!groupedByDate[date].checkin || new Date(log.timestamp) < new Date(groupedByDate[date].checkin.timestamp)) {
-          groupedByDate[date].checkin = log;
+    // Process check-outs - match them with their corresponding check-ins
+    checkOuts.forEach(checkOut => {
+      // Find the most recent check-in before this check-out
+      const correspondingCheckIn = checkIns
+        .filter(checkIn => new Date(checkIn.timestamp) < new Date(checkOut.timestamp))
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+
+      if (correspondingCheckIn) {
+        // Get the date of the check-in (not the check-out)
+        const checkInDate = dateUtils.getDateString(correspondingCheckIn.timestamp);
+
+        // Ensure the group exists
+        if (!groupedByDate[checkInDate]) {
+          groupedByDate[checkInDate] = {
+            date: checkInDate,
+            checkin: null,
+            checkout: null
+          };
         }
-      } else if (log.type === 'checkout') {
-        // Keep the latest check-out of the day
-        if (!groupedByDate[date].checkout || new Date(log.timestamp) > new Date(groupedByDate[date].checkout.timestamp)) {
-          groupedByDate[date].checkout = log;
+
+        // Only set checkout if there isn't one already, or if this one is later
+        if (!groupedByDate[checkInDate].checkout || new Date(checkOut.timestamp) > new Date(groupedByDate[checkInDate].checkout.timestamp)) {
+          groupedByDate[checkInDate].checkout = checkOut;
+        }
+      } else {
+        // No corresponding check-in found, group by check-out date
+        const date = dateUtils.getDateString(checkOut.timestamp);
+        if (!groupedByDate[date]) {
+          groupedByDate[date] = {
+            date,
+            checkin: null,
+            checkout: null
+          };
+        }
+        if (!groupedByDate[date].checkout || new Date(checkOut.timestamp) > new Date(groupedByDate[date].checkout.timestamp)) {
+          groupedByDate[date].checkout = checkOut;
         }
       }
     });
@@ -399,30 +476,28 @@ exports.getMyAttendance = async (req, res) => {
 // Get attendance stats (admin/supervisor)
 exports.getAttendanceStats = async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Use Saudi Arabia timezone for today's stats
+    const today = dateUtils.getStartOfToday();
+    const tomorrow = dateUtils.getEndOfToday();
 
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    // Get today's stats
+    // Get today's stats (in Saudi Arabia timezone)
     const todayLogs = await AttendanceLog.countDocuments({
-      timestamp: { $gte: today, $lt: tomorrow }
+      timestamp: { $gte: today, $lte: tomorrow }
     });
 
     const todayCheckins = await AttendanceLog.countDocuments({
       type: 'checkin',
-      timestamp: { $gte: today, $lt: tomorrow }
+      timestamp: { $gte: today, $lte: tomorrow }
     });
 
     const todayCheckouts = await AttendanceLog.countDocuments({
       type: 'checkout',
-      timestamp: { $gte: today, $lt: tomorrow }
+      timestamp: { $gte: today, $lte: tomorrow }
     });
 
     // Get unique users today
     const uniqueUsers = await AttendanceLog.distinct('userId', {
-      timestamp: { $gte: today, $lt: tomorrow }
+      timestamp: { $gte: today, $lte: tomorrow }
     });
 
     // Get active QR stats
@@ -589,44 +664,108 @@ exports.getAllAttendanceGrouped = async (req, res) => {
     // Filter out logs where userId population failed (user might be deleted)
     const validLogs = logs.filter(log => log.userId && log.userId._id);
 
-    // Group by date AND userId (use UTC to avoid timezone issues)
-    const groupedByDateAndUser = {};
+    // Group by date AND userId (use Saudi Arabia timezone)
+    // First, separate check-ins and check-outs by user
+    const userLogs = {};
     validLogs.forEach(log => {
-
-      // Use UTC date to avoid timezone shifts
-      const logDate = new Date(log.timestamp);
-      const year = logDate.getUTCFullYear();
-      const month = String(logDate.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(logDate.getUTCDate()).padStart(2, '0');
-      const date = `${year}-${month}-${day}`; // YYYY-MM-DD format
-
-      // Create unique key for date + userId combination
-      // Handle both populated (object) and unpopulated (ObjectId) userId
       const userId = log.userId._id
         ? log.userId._id.toString()
         : (log.userId.toString ? log.userId.toString() : String(log.userId));
-      const key = `${date}_${userId}`;
 
-      if (!groupedByDateAndUser[key]) {
-        groupedByDateAndUser[key] = {
-          date,
+      if (!userLogs[userId]) {
+        userLogs[userId] = {
           userId: log.userId,
-          checkin: null,
-          checkout: null
+          checkIns: [],
+          checkOuts: []
         };
       }
 
       if (log.type === 'checkin') {
-        // Keep earliest check-in for this user on this date
-        if (!groupedByDateAndUser[key].checkin || new Date(log.timestamp) < new Date(groupedByDateAndUser[key].checkin.timestamp)) {
-          groupedByDateAndUser[key].checkin = log;
-        }
+        userLogs[userId].checkIns.push(log);
       } else if (log.type === 'checkout') {
-        // Keep latest check-out for this user on this date
-        if (!groupedByDateAndUser[key].checkout || new Date(log.timestamp) > new Date(groupedByDateAndUser[key].checkout.timestamp)) {
-          groupedByDateAndUser[key].checkout = log;
-        }
+        userLogs[userId].checkOuts.push(log);
       }
+    });
+
+    // Sort check-ins and check-outs by timestamp for each user
+    Object.keys(userLogs).forEach(userId => {
+      userLogs[userId].checkIns.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      userLogs[userId].checkOuts.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    });
+
+    const groupedByDateAndUser = {};
+
+    // Process check-ins
+    Object.values(userLogs).forEach(({ userId, checkIns }) => {
+      checkIns.forEach(checkIn => {
+        const date = dateUtils.getDateString(checkIn.timestamp);
+        const userIdStr = userId._id ? userId._id.toString() : userId.toString();
+        const key = `${date}_${userIdStr}`;
+
+        if (!groupedByDateAndUser[key]) {
+          groupedByDateAndUser[key] = {
+            date,
+            userId: userId,
+            checkin: null,
+            checkout: null
+          };
+        }
+
+        // Keep earliest check-in for this user on this date
+        if (!groupedByDateAndUser[key].checkin || new Date(checkIn.timestamp) < new Date(groupedByDateAndUser[key].checkin.timestamp)) {
+          groupedByDateAndUser[key].checkin = checkIn;
+        }
+      });
+    });
+
+    // Process check-outs - match them with their corresponding check-ins
+    Object.values(userLogs).forEach(({ userId, checkIns, checkOuts }) => {
+      checkOuts.forEach(checkOut => {
+        const userIdStr = userId._id ? userId._id.toString() : userId.toString();
+
+        // Find the most recent check-in before this check-out for this user
+        const correspondingCheckIn = checkIns
+          .filter(checkIn => new Date(checkIn.timestamp) < new Date(checkOut.timestamp))
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+
+        if (correspondingCheckIn) {
+          // Get the date of the check-in (not the check-out)
+          const checkInDate = dateUtils.getDateString(correspondingCheckIn.timestamp);
+          const key = `${checkInDate}_${userIdStr}`;
+
+          // Ensure the group exists
+          if (!groupedByDateAndUser[key]) {
+            groupedByDateAndUser[key] = {
+              date: checkInDate,
+              userId: userId,
+              checkin: null,
+              checkout: null
+            };
+          }
+
+          // Only set checkout if there isn't one already, or if this one is later
+          if (!groupedByDateAndUser[key].checkout || new Date(checkOut.timestamp) > new Date(groupedByDateAndUser[key].checkout.timestamp)) {
+            groupedByDateAndUser[key].checkout = checkOut;
+          }
+        } else {
+          // No corresponding check-in found, group by check-out date
+          const date = dateUtils.getDateString(checkOut.timestamp);
+          const key = `${date}_${userIdStr}`;
+
+          if (!groupedByDateAndUser[key]) {
+            groupedByDateAndUser[key] = {
+              date,
+              userId: userId,
+              checkin: null,
+              checkout: null
+            };
+          }
+
+          if (!groupedByDateAndUser[key].checkout || new Date(checkOut.timestamp) > new Date(groupedByDateAndUser[key].checkout.timestamp)) {
+            groupedByDateAndUser[key].checkout = checkOut;
+          }
+        }
+      });
     });
 
     // Convert to array and sort by date (newest first), then by userId

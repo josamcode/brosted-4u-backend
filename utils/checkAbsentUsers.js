@@ -1,16 +1,18 @@
 const AttendanceLog = require('../models/AttendanceLog');
 const User = require('../models/User');
 const { createNotification } = require('./notifications');
+const dateUtils = require('./dateUtils');
 
 /**
  * Check for absent users at the end of the day
  * This should be called daily (e.g., via cron job at end of day)
+ * Uses Saudi Arabia timezone (Asia/Riyadh)
  */
 const checkAbsentUsers = async () => {
   try {
-    const today = new Date();
-    const todayStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 0, 0, 0, 0));
-    const todayEnd = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 23, 59, 59, 999));
+    // Use Saudi Arabia timezone for today's check
+    const todayStart = dateUtils.getStartOfToday();
+    const todayEnd = dateUtils.getEndOfToday();
 
     // Get all active users (optimized - only select necessary fields)
     const activeUsers = await User.find({ isActive: true })
@@ -34,7 +36,8 @@ const checkAbsentUsers = async () => {
         continue; // Skip users without work days
       }
 
-      const dayName = today.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+      // Get day name in Saudi Arabia timezone
+      const dayName = dateUtils.getDayName(new Date());
 
       // Check if today is a work day for this user
       if (!user.workDays.includes(dayName)) {

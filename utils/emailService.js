@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const dateUtils = require('./dateUtils');
 
 // Create transporter
 const createTransporter = () => {
@@ -184,6 +185,12 @@ const sendEmail = async ({ to, subject, html, text }) => {
 
 // Email templates for different events
 
+// Helper function to format dates for emails using Saudi timezone
+const formatEmailDate = (date, language = 'en') => {
+  const locale = language === 'ar' ? 'ar-SA' : 'en-SA';
+  return dateUtils.formatDate(date, {}, locale);
+};
+
 // Form submitted email
 const getFormSubmittedEmail = (formData, language = 'en') => {
   const isRTL = language === 'ar';
@@ -191,7 +198,7 @@ const getFormSubmittedEmail = (formData, language = 'en') => {
   const formTitle = isRTL ? formData.templateTitle?.ar : formData.templateTitle?.en;
   const userName = formData.filledBy?.name || 'User';
   const department = formData.department || 'N/A';
-  const date = new Date(formData.date).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US');
+  const date = formatEmailDate(formData.date, language);
   const shift = formData.shift || 'N/A';
 
   const content = `
@@ -226,7 +233,7 @@ const getFormApprovedEmail = (formData, language = 'en') => {
     <div class="info-box">
       <p><strong>${isRTL ? 'اسم النموذج:' : 'Form Name:'}</strong> ${formTitle}</p>
       <p><strong>${isRTL ? 'تمت الموافقة بواسطة:' : 'Approved By:'}</strong> ${approvedBy}</p>
-      ${formData.approvalDate ? `<p><strong>${isRTL ? 'تاريخ الموافقة:' : 'Approval Date:'}</strong> ${new Date(formData.approvalDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US')}</p>` : ''}
+      ${formData.approvalDate ? `<p><strong>${isRTL ? 'تاريخ الموافقة:' : 'Approval Date:'}</strong> ${formatEmailDate(formData.approvalDate, language)}</p>` : ''}
     </div>
     <p>${isRTL ? 'شكراً لاستخدامك نظام Brosted-4U.' : 'Thank you for using Brosted-4U system.'}</p>
   `;
@@ -251,7 +258,7 @@ const getFormRejectedEmail = (formData, language = 'en') => {
     <div class="info-box">
       <p><strong>${isRTL ? 'اسم النموذج:' : 'Form Name:'}</strong> ${formTitle}</p>
       <p><strong>${isRTL ? 'تم الرفض بواسطة:' : 'Rejected By:'}</strong> ${rejectedBy}</p>
-      ${formData.rejectionDate ? `<p><strong>${isRTL ? 'تاريخ الرفض:' : 'Rejection Date:'}</strong> ${new Date(formData.rejectionDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US')}</p>` : ''}
+      ${formData.rejectionDate ? `<p><strong>${isRTL ? 'تاريخ الرفض:' : 'Rejection Date:'}</strong> ${formatEmailDate(formData.rejectionDate, language)}</p>` : ''}
       ${notes ? `<p><strong>${isRTL ? 'ملاحظات:' : 'Notes:'}</strong> ${notes}</p>` : ''}
     </div>
     <p>${isRTL ? 'يرجى مراجعة الملاحظات وإعادة إرسال النموذج بعد التصحيحات.' : 'Please review the notes and resubmit the form after corrections.'}</p>
@@ -270,8 +277,8 @@ const getLeaveRequestedEmail = (leaveData, language = 'en') => {
   const userName = leaveData.userName || 'User';
   const leaveType = isRTL ? leaveData.leaveType?.ar : leaveData.leaveType?.en;
   const days = leaveData.days || 0;
-  const startDate = new Date(leaveData.startDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US');
-  const endDate = new Date(leaveData.endDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US');
+  const startDate = formatEmailDate(leaveData.startDate, language);
+  const endDate = formatEmailDate(leaveData.endDate, language);
   const department = leaveData.department || 'N/A';
 
   // Calculate duration in hours if less than 1 day
@@ -309,8 +316,8 @@ const getLeaveApprovedEmail = (leaveData, language = 'en') => {
   const title = isRTL ? 'تمت الموافقة على طلب الإجازة' : 'Leave Request Approved';
   const leaveType = isRTL ? leaveData.leaveType?.ar : leaveData.leaveType?.en;
   const days = leaveData.days || 0;
-  const startDate = new Date(leaveData.startDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US');
-  const endDate = new Date(leaveData.endDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US');
+  const startDate = formatEmailDate(leaveData.startDate, language);
+  const endDate = formatEmailDate(leaveData.endDate, language);
   const approvedBy = leaveData.approvedBy?.name || 'Admin';
 
   // Calculate duration in hours if less than 1 day
@@ -347,8 +354,8 @@ const getLeaveRejectedEmail = (leaveData, language = 'en') => {
   const title = isRTL ? 'تم رفض طلب الإجازة' : 'Leave Request Rejected';
   const leaveType = isRTL ? leaveData.leaveType?.ar : leaveData.leaveType?.en;
   const days = leaveData.days || 0;
-  const startDate = new Date(leaveData.startDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US');
-  const endDate = new Date(leaveData.endDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US');
+  const startDate = formatEmailDate(leaveData.startDate, language);
+  const endDate = formatEmailDate(leaveData.endDate, language);
   const rejectedBy = leaveData.rejectedBy?.name || 'Admin';
   const notes = leaveData.rejectionNotes || '';
 
@@ -482,7 +489,7 @@ const getPasswordResetRequestEmail = (requestData, language = 'en') => {
   const userName = requestData.userName || 'User';
   const userEmail = requestData.userEmail || 'N/A';
   const department = requestData.department || 'N/A';
-  const requestDate = new Date(requestData.requestDate).toLocaleDateString(language === 'ar' ? 'ar-SA' : 'en-US');
+  const requestDate = formatEmailDate(requestData.requestDate, language);
 
   const content = `
     <h2>${title}</h2>
