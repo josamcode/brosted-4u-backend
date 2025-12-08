@@ -123,6 +123,19 @@ const authLimiter = rateLimit({
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
+// Middleware to prevent browser caching of API responses
+// This ensures fresh data is always fetched, especially for dynamic content like dashboard stats
+app.use('/api', (req, res, next) => {
+  // Only set no-cache for GET requests (data fetching)
+  // POST/PUT/DELETE requests don't need this as they're not cached by browsers
+  if (req.method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));

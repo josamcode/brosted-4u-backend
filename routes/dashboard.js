@@ -14,9 +14,14 @@ const logger = require('../utils/logger');
 // @access  Private
 router.get('/summary', protect, async (req, res) => {
   try {
+    // Prevent browser caching - always fetch fresh data
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     // Generate cache key based on user role and ID
     const cacheKey = cache.key('dashboard', req.user.role, req.user.id);
-    
+
     // Try to get from cache first
     const cached = await cache.get(cacheKey);
     if (cached) {
