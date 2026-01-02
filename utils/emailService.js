@@ -1,17 +1,54 @@
 const nodemailer = require('nodemailer');
 const dateUtils = require('./dateUtils');
 
+// Check if we're in development mode
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+// Development logging helper
+const devLog = (message, data = null) => {
+  if (isDevelopment) {
+    const timestamp = new Date().toISOString();
+    console.log(`[EMAIL ${timestamp}] ${message}`);
+    if (data) {
+      console.log(`[EMAIL ${timestamp}] Data:`, JSON.stringify(data, null, 2));
+    }
+  }
+};
+
 // Create transporter
 const createTransporter = () => {
-  return nodemailer.createTransport({
+  const config = {
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.EMAIL_PORT || '587'),
     secure: false, // true for 465, false for other ports
     auth: {
       user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
+      pass: process.env.EMAIL_PASS ? '***' : undefined // Hide password in logs
     }
+  };
+
+  devLog('Creating email transporter', {
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    user: config.auth.user,
+    hasPassword: !!process.env.EMAIL_PASS
   });
+
+  const transporter = nodemailer.createTransport(config);
+
+  // Verify connection in development
+  if (isDevelopment) {
+    transporter.verify((error, success) => {
+      if (error) {
+        devLog('❌ Email transporter verification FAILED', { error: error.message });
+      } else {
+        devLog('✅ Email transporter verified successfully');
+      }
+    });
+  }
+
+  return transporter;
 };
 
 // Email template with company branding
@@ -164,6 +201,13 @@ const getEmailTemplate = (title, content, language = 'en') => {
 // Send email function
 const sendEmail = async ({ to, subject, html, text }) => {
   try {
+    devLog('📧 Starting email send process', {
+      to: Array.isArray(to) ? to : [to],
+      subject: subject,
+      hasHtml: !!html,
+      hasText: !!text
+    });
+
     const transporter = createTransporter();
 
     const mailOptions = {
@@ -174,10 +218,36 @@ const sendEmail = async ({ to, subject, html, text }) => {
       text: text || subject
     };
 
+    devLog('📤 Sending email', {
+      from: mailOptions.from,
+      to: mailOptions.to,
+      subject: mailOptions.subject,
+      htmlLength: html ? html.length : 0,
+      textLength: text ? text.length : 0
+    });
+
     const info = await transporter.sendMail(mailOptions);
+
+    devLog('✅ Email sent successfully', {
+      messageId: info.messageId,
+      response: info.response,
+      accepted: info.accepted,
+      rejected: info.rejected,
+      pending: info.pending
+    });
+
     console.log('Email sent successfully:', info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
+    devLog('❌ Error sending email', {
+      error: error.message,
+      stack: error.stack,
+      code: error.code,
+      command: error.command,
+      response: error.response,
+      responseCode: error.responseCode
+    });
+
     console.error('Error sending email:', error);
     return { success: false, error: error.message };
   }
@@ -185,10 +255,11 @@ const sendEmail = async ({ to, subject, html, text }) => {
 
 // Email templates for different events
 
-// Helper function to format dates for emails using Saudi timezone
+// Helper function to format dates for emails using Saudi timezone (Gregorian calendar)
 const formatEmailDate = (date, language = 'en') => {
-  const locale = language === 'ar' ? 'ar-US' : 'en-US';
-  return dateUtils.formatDate(date, {}, locale);
+  const locale = language === 'ar' ? 'ar-SA' : 'en-US';
+  // Explicitly use Gregorian calendar to avoid Hijri dates
+  return dateUtils.formatDate(date, { calendar: 'gregory' }, locale);
 };
 
 // Form submitted email
@@ -391,6 +462,8 @@ const getLeaveRejectedEmail = (leaveData, language = 'en') => {
 // Send email to admins
 const sendEmailToAdmins = async (emailData, department = null) => {
   try {
+    devLog('👥 Sending email to admins', { department });
+
     const User = require('../models/User');
 
     // Get all admin users
@@ -403,7 +476,14 @@ const sendEmailToAdmins = async (emailData, department = null) => {
 
     const admins = await User.find(query).select('email languagePreference');
 
+    devLog('📋 Found admins', {
+      count: admins.length,
+      emails: admins.map(a => a.email),
+      languages: admins.map(a => a.languagePreference || 'ar')
+    });
+
     if (admins.length === 0) {
+      devLog('⚠️ No admin users found to send email to');
       console.log('No admin users found to send email to');
       return { success: false, message: 'No admin users found' };
     }
@@ -411,6 +491,8 @@ const sendEmailToAdmins = async (emailData, department = null) => {
     const results = [];
     for (const admin of admins) {
       const language = admin.languagePreference || 'ar';
+      devLog(`📧 Preparing email for admin: ${admin.email}`, { language });
+
       const email = emailData(language);
 
       const result = await sendEmail({
@@ -420,10 +502,21 @@ const sendEmailToAdmins = async (emailData, department = null) => {
       });
 
       results.push({ email: admin.email, ...result });
+      devLog(`✅ Email sent to admin: ${admin.email}`, { success: result.success });
     }
+
+    devLog('✅ Completed sending emails to admins', {
+      total: admins.length,
+      successful: results.filter(r => r.success).length,
+      failed: results.filter(r => !r.success).length
+    });
 
     return { success: true, results };
   } catch (error) {
+    devLog('❌ Error sending email to admins', {
+      error: error.message,
+      stack: error.stack
+    });
     console.error('Error sending email to admins:', error);
     return { success: false, error: error.message };
   }
@@ -432,7 +525,15 @@ const sendEmailToAdmins = async (emailData, department = null) => {
 // Send email to user
 const sendEmailToUser = async (userEmail, emailData, language = 'ar') => {
   try {
+    devLog('👤 Sending email to user', { userEmail, language });
+
     const email = emailData(language);
+
+    devLog('📧 Email prepared for user', {
+      userEmail,
+      subject: email.subject,
+      htmlLength: email.html ? email.html.length : 0
+    });
 
     const result = await sendEmail({
       to: userEmail,
@@ -440,8 +541,15 @@ const sendEmailToUser = async (userEmail, emailData, language = 'ar') => {
       html: email.html
     });
 
+    devLog(`✅ Email sent to user: ${userEmail}`, { success: result.success });
+
     return result;
   } catch (error) {
+    devLog('❌ Error sending email to user', {
+      userEmail,
+      error: error.message,
+      stack: error.stack
+    });
     console.error('Error sending email to user:', error);
     return { success: false, error: error.message };
   }
